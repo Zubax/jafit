@@ -259,7 +259,6 @@ def load_bh_curve(file_path: Path) -> npt.NDArray[np.float64]:
     """
     Returns a matrix of shape (n, 2) where n is the number of data points; the columns are the applied field H
     and the flux density B, respectively.
-    The rows are sorted such that H (and therefore B) is monotonically increasing.
     """
     bh_file_lines = file_path.read_text().splitlines()
     try:
@@ -270,7 +269,6 @@ def load_bh_curve(file_path: Path) -> npt.NDArray[np.float64]:
     bh_data = np.array([[float(x) for x in line.split()] for line in bh_file_lines], dtype=np.float64)
     if bh_data.shape[1] != 2 or bh_data.shape[0] < 2:
         raise ValueError(f"Invalid BH curve data shape: {bh_data.shape}")
-    bh_data = bh_data[np.argsort(bh_data[:, 0])]  # Sort by H
     return bh_data
 
 
@@ -280,8 +278,16 @@ def main() -> None:
         level="INFO",
         format="%(asctime)s %(levelname)-3.3s %(name)s: %(message)s",
     )
+
+    # Load and validate the BH curve
     bh_curve = load_bh_curve(Path(sys.argv[1]))
     _logger.info("BH curve loaded:\r%s", bh_curve)
+    if not np.all(np.diff(bh_curve[:, 0]) > 0):
+        raise ValueError("Bad BH curve: H is not monotonically increasing")
+    if not np.all(np.diff(bh_curve[:, 1]) > 0):
+        raise ValueError("Bad BH curve: B is not monotonically increasing")
+    if bh_curve[0, 0] >= 0 or bh_curve[0, 1] < 0 or bh_curve[-1, 0] < 0 or bh_curve[-1, 1] <= 0:
+        raise ValueError("Bad BH curve: second quadrant not fully covered")
 
     coef = copy.copy(JA_SCALAR_COEFFS_INITIAL)
 
