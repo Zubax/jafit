@@ -3,6 +3,7 @@
 
 import shutil
 from pathlib import Path
+# noinspection PyPackageRequirements
 import nox
 
 

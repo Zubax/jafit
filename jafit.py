@@ -72,11 +72,14 @@ in COMSOL Multiphysics. They can (and should) be refined further to speedup conv
 
 @dataclasses.dataclass(frozen=True)
 class Solution:
-    # TODO: split into a list for ascending/descending H
-    H_M_B: npt.NDArray[np.float64]
+    H_M_B_segments: list[npt.NDArray[np.float64]]
     """
-    An nx3 vector where the columns are the applied field H, magnetization M, and flux density B, respectively.
-    One row per sample point.
+    A list of hysteresis loop fragments in the order of appearance.
+    If the initial H-sweep direction is positive, the first segment will be the forward sweep to forward saturation,
+    then the reverse sweep to reverse saturation, and vice versa.
+
+    Each fragment contains an nx3 matrix, where the columns are the applied field H, magnetization M,
+    and flux density B, respectively; one row per sample point.
     """
 
 
