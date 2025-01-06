@@ -18,10 +18,12 @@ alpha   interdomain coupling                                                non-
 
 from __future__ import annotations
 import os
+import sys
 import copy
 import itertools
 from logging import getLogger, basicConfig
 import dataclasses
+from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 import matplotlib
@@ -191,6 +193,29 @@ def ja_dM_dH(coef: JAScalarCoeffs, *, H: float, M: float, dH_diff_step: float) -
     return float(dM_dH_e / (1 - coef.alpha * dM_dH_e))
 
 
+def langevin(x: float) -> float:
+    """
+    L(x) = coth(x) - 1/x
+    For tensors, the function is applied element-wise.
+    """
+    if np.abs(x) < EPSILON:  # For very small |x|, use the series expansion ~ x/3
+        return x / 3.0
+    return float(1.0 / np.tanh(x) - 1.0 / x)
+
+
+# noinspection PyPep8Naming
+def dL_dx(x: float) -> float:
+    """
+    Derivative of Langevin L(x) = coth(x) - 1/x.
+    d/dx [coth(x) - 1/x] = -csch^2(x) + 1/x^2.
+    """
+    if np.abs(x) < EPSILON:  # series expansion of L(x) ~ x/3 -> derivative ~ 1/3 near zero
+        return 1.0 / 3.0
+    # exact expression: -csch^2(x) + 1/x^2
+    # csch^2(x) = 1 / sinh^2(x)
+    return float(-1.0 / (np.sinh(x) ** 2) + 1.0 / (x**2))
+
+
 def visualize(sol: Solution, max_points: float = 1e4) -> None:
     import matplotlib.pyplot as plt
 
@@ -230,12 +255,33 @@ def visualize(sol: Solution, max_points: float = 1e4) -> None:
         plt.savefig(output_file)
 
 
+def load_bh_curve(file_path: Path) -> npt.NDArray[np.float64]:
+    """
+    Returns a matrix of shape (n, 2) where n is the number of data points; the columns are the applied field H
+    and the flux density B, respectively.
+    The rows are sorted such that H (and therefore B) is monotonically increasing.
+    """
+    bh_file_lines = file_path.read_text().splitlines()
+    try:
+        [float(x) for x in bh_file_lines[0].split()]
+    except ValueError:
+        _logger.info("Skipping the first line of the input file, assuming it is the header: %r", bh_file_lines[0])
+        bh_file_lines = bh_file_lines[1:]
+    bh_data = np.array([[float(x) for x in line.split()] for line in bh_file_lines], dtype=np.float64)
+    if bh_data.shape[1] != 2 or bh_data.shape[0] < 2:
+        raise ValueError(f"Invalid BH curve data shape: {bh_data.shape}")
+    bh_data = bh_data[np.argsort(bh_data[:, 0])]  # Sort by H
+    return bh_data
+
+
 # noinspection PyPep8Naming
 def main() -> None:
     basicConfig(
         level="INFO",
         format="%(asctime)s %(levelname)-3.3s %(name)s: %(message)s",
     )
+    bh_curve = load_bh_curve(Path(sys.argv[1]))
+    _logger.info("BH curve loaded:\r%s", bh_curve)
 
     coef = copy.copy(JA_SCALAR_COEFFS_INITIAL)
 
@@ -244,29 +290,6 @@ def main() -> None:
     _logger.info(f"Solution contains fragments of size: {[len(x) for x in sol.H_M_B_segments]}")
 
     visualize(sol)
-
-
-def langevin(x: float) -> float:
-    """
-    L(x) = coth(x) - 1/x
-    For tensors, the function is applied element-wise.
-    """
-    if np.abs(x) < EPSILON:  # For very small |x|, use the series expansion ~ x/3
-        return x / 3.0
-    return float(1.0 / np.tanh(x) - 1.0 / x)
-
-
-# noinspection PyPep8Naming
-def dL_dx(x: float) -> float:
-    """
-    Derivative of Langevin L(x) = coth(x) - 1/x.
-    d/dx [coth(x) - 1/x] = -csch^2(x) + 1/x^2.
-    """
-    if np.abs(x) < EPSILON:  # series expansion of L(x) ~ x/3 -> derivative ~ 1/3 near zero
-        return 1.0 / 3.0
-    # exact expression: -csch^2(x) + 1/x^2
-    # csch^2(x) = 1 / sinh^2(x)
-    return float(-1.0 / (np.sinh(x) ** 2) + 1.0 / (x**2))
 
 
 _logger = getLogger(__name__)

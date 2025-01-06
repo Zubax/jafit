@@ -16,3 +16,12 @@ jobs:
     - run: |
         pip install nox
         nox
+    - name: Clean up unnecessary outputs upon successful run
+      run: rm -rf .nox
+    - name: Upload the outputs of the test run
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: outputs
+        path: .
+        compression-level: 9
