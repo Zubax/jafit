@@ -6,7 +6,7 @@ allowing one to simulate (de)magnetization of anisotropic ferromagnetics there.
 
 ## Usage
 
-The script accepts a tab-separated file encoding the second quadrant of the BH curve via stdin,
+The script accepts a tab-separated file encoding the second quadrant of the BH curve as a command line argument,
 where the first column contains the magnetic field strength H in ampere/meter,
 and the second column contains the magnetic flux density B in tesla.
 The first row may or may not be the header row.
@@ -15,7 +15,7 @@ Install the dependencies before the first invocation: `pip install -r requiremen
 then run:
 
 ```bash
-cat test-data/bh-lng37.tab | python3 ./jafit.py
+python3 ./jafit.py test-data/bh-lng37.tab
 ```
 
 ## Development

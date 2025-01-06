@@ -17,11 +17,18 @@ alpha   interdomain coupling                                                non-
 """
 
 from __future__ import annotations
+import os
 import copy
+import itertools
 from logging import getLogger, basicConfig
 import dataclasses
 import numpy as np
 import numpy.typing as npt
+import matplotlib
+
+NO_DISPLAY = os.name == "posix" and "DISPLAY" not in os.environ
+if NO_DISPLAY:  # https://stackoverflow.com/a/45756291/1007777
+    matplotlib.use("Agg")
 
 
 mu_0 = 1.2566370614359173e-6  # Vacuum permeability [henry/meter]
@@ -75,8 +82,8 @@ class Solution:
     H_M_B_segments: list[npt.NDArray[np.float64]]
     """
     A list of hysteresis loop fragments in the order of appearance.
-    If the initial H-sweep direction is positive, the first segment will be the forward sweep to forward saturation,
-    then the reverse sweep to reverse saturation, and vice versa.
+    The first fragment is from zero to forward saturation, then to reverse saturation, then back forward.
+    This results in the construction of the full hysteresis loop starting from the virgin curve.
 
     Each fragment contains an nx3 matrix, where the columns are the applied field H, magnetization M,
     and flux density B, respectively; one row per sample point.
@@ -86,10 +93,10 @@ class Solution:
 # noinspection PyPep8Naming
 def ja_solve_scalar(
     coef: JAScalarCoeffs,
-    H_0: float = 0,
-    M_0: float = 0,
-    H_step: float = 0.1,
-    direction: int = +1,
+    *,
+    H_step: float,
+    dM_dH_saturation_threshold: float,
+    H_magnitude_limit: float,
 ) -> Solution:
     """
     Solves the JA model for the given coefficients and initial conditions by sweeping the magnetization in the
@@ -98,20 +105,51 @@ def ja_solve_scalar(
 
     Returns sample points for the H, M, and B fields in the order of their appearance.
     """
-    H = float(H_0)
-    M = float(M_0)
     H_step = float(H_step)
     if not 0 < H_step or not np.isfinite(H_step):
         raise ValueError(f"H_step invalid: {H_step}")
-    direction = int(direction)
-    if direction not in {-1, +1}:
-        raise ValueError(f"direction invalid: {direction}")
 
-    HMB: list[tuple[float, float, float]] = []
+    hmb_fragments: list[list[tuple[float, float, float]]] = []
 
-    # TODO: Implement
+    # noinspection PyPep8Naming
+    def sweep_to_saturation(H: float, M: float, sign: int) -> list[tuple[float, float, float]]:
+        assert sign in (-1, +1)
+        out: list[tuple[float, float, float]] = []
+        for idx in itertools.count():
+            H_old, M_old = H, M
 
-    return Solution(H_M_B=np.array(HMB, dtype=np.float64))
+            # Integrate this step. We should be using a proper ODE solver here.
+            dM = ja_dM_dH(coef, H=H, M=M, dH_diff_step=H_step)
+            H += sign * H_step
+            M += dM * (sign * H_step)
+
+            # Post-process the new data point.
+            out.append((H, M, mu_0 * M))
+            dM_dH_numeric = (M - M_old) / (H - H_old)
+            if (sign > 0) == (H > 0) and dM_dH_numeric < dM_dH_saturation_threshold:
+                _logger.info(f"Sweep stopped at H={H:+.3f}, M={M:+.3f} due to saturation")
+                break
+            if np.abs(H) > H_magnitude_limit:
+                _logger.info(f"Sweep stopped at H={H:+.3f}, M={M:+.3f} due to H magnitude limit")
+                break
+            if idx % 10000 == 0:
+                _logger.info(f"{('','↑', '↓')[sign]}#{idx}: H={H:+.3f}, M={M:+.3f}, dM/dH={dM_dH_numeric:.6f}")
+        return out
+
+    # Virgin curve to positive saturation
+    hmb_fragments.append(sweep_to_saturation(0, 0, +1))
+
+    # Reverse sweep to negative saturation
+    H_last, M_last = hmb_fragments[-1][-1][0], hmb_fragments[-1][-1][1]
+    hmb_fragments.append(sweep_to_saturation(H_last, M_last, -1))
+
+    # Forward sweep to positive saturation to complete the major loop
+    H_last, M_last = hmb_fragments[-1][-1][0], hmb_fragments[-1][-1][1]
+    hmb_fragments.append(sweep_to_saturation(H_last, M_last, +1))
+
+    return Solution(
+        H_M_B_segments=[np.array(x, dtype=np.float64) for x in hmb_fragments],
+    )
 
 
 # noinspection PyPep8Naming
@@ -153,22 +191,59 @@ def ja_dM_dH(coef: JAScalarCoeffs, *, H: float, M: float, dH_diff_step: float) -
     return float(dM_dH_e / (1 - coef.alpha * dM_dH_e))
 
 
+def visualize(sol: Solution, max_points: float = 1e4) -> None:
+    import matplotlib.pyplot as plt
+
+    fig, (ax_m, ax_b) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+    for i, fragment in enumerate(sol.H_M_B_segments, start=1):
+        n_points = fragment.shape[0]
+        if n_points > max_points:  # Select `max_points` evenly spaced indices from the fragment
+            indices = np.round(np.linspace(0, n_points - 1, int(max_points))).astype(int)
+            fragment = fragment[indices, :]
+        H_vals = fragment[:, 0]
+        M_vals = fragment[:, 1]
+        B_vals = fragment[:, 2]
+        ax_m.plot(H_vals, M_vals, label=f"Fragment {i}")
+        ax_b.plot(H_vals, B_vals, label=f"Fragment {i}")
+
+    # Configure Magnetization subplot
+    ax_m.set_title("Magnetization vs. Field")
+    ax_m.set_xlabel("H (ampere/meter)")
+    ax_m.set_ylabel("M (ampere/meter)")
+    ax_m.legend()
+    ax_m.grid(True)
+
+    # Configure Flux Density subplot
+    ax_b.set_title("Flux Density vs. Field")
+    ax_b.set_xlabel("H (ampere/meter)")
+    ax_b.set_ylabel("B (tesla)")
+    ax_b.legend()
+    ax_b.grid(True)
+
+    # Show the plot
+    plt.tight_layout()
+    if not NO_DISPLAY:
+        plt.show()
+    else:
+        output_file = "jafit.png"
+        _logger.info(f"Saving the plot to {output_file!r}")
+        plt.savefig(output_file)
+
+
+# noinspection PyPep8Naming
 def main() -> None:
-    basicConfig(level="DEBUG", format="%(asctime)s %(levelname)-3.3s %(name)s: %(message)s")
+    basicConfig(
+        level="INFO",
+        format="%(asctime)s %(levelname)-3.3s %(name)s: %(message)s",
+    )
 
     coef = copy.copy(JA_SCALAR_COEFFS_INITIAL)
 
-    print(ja_dM_dH(coef, H=-1, M=0, dH_diff_step=1e-3))
-    print(ja_dM_dH(coef, H=+0, M=0, dH_diff_step=1e-3))
-    print(ja_dM_dH(coef, H=+1, M=0, dH_diff_step=1e-3))
+    sol = ja_solve_scalar(coef, H_step=1.0, dM_dH_saturation_threshold=1.0, H_magnitude_limit=1e6)
 
-    print(ja_dM_dH(coef, H=-1, M=0.8e6, dH_diff_step=1e-3))
-    print(ja_dM_dH(coef, H=+0, M=0.8e6, dH_diff_step=1e-3))
-    print(ja_dM_dH(coef, H=+1, M=0.8e6, dH_diff_step=1e-3))
+    _logger.info(f"Solution contains fragments of size: {[len(x) for x in sol.H_M_B_segments]}")
 
-    print(ja_dM_dH(coef, H=-1, M=-0.8e6, dH_diff_step=1e-3))
-    print(ja_dM_dH(coef, H=+0, M=-0.8e6, dH_diff_step=1e-3))
-    print(ja_dM_dH(coef, H=+1, M=-0.8e6, dH_diff_step=1e-3))
+    visualize(sol)
 
 
 def langevin(x: float) -> float:

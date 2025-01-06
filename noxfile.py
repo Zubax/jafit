@@ -35,19 +35,19 @@ def clean(session):
 def test(session):
     session.install("-e", ".")
     session.install("-r", "requirements.txt")
-    session.install("pytest ~= 8.3", "mypy ~= 1.14", "coverage ~= 7.6")
 
-    # PyTest
+    session.install("pytest ~= 8.3", "mypy ~= 1.14", "coverage ~= 7.6")
+    session.run("coverage", "run", "jafit.py", "test-data/bh-lng37.tab")
     session.run("coverage", "run", "-m", "pytest")
 
-    # Coverage report
+    session.run("coverage", "combine")
     session.run("coverage", "report", "--fail-under=25")
     if session.interactive:
         session.run("coverage", "html")
         report_file = Path.cwd().resolve() / "htmlcov" / "index.html"
         session.log(f"OPEN IN WEB BROWSER: file://{report_file}")
 
-    # Static analysis
+    session.install("mypy ~= 1.14")
     session.run("mypy", ".")
 
 

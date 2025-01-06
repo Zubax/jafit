@@ -8,6 +8,12 @@ log_cli = true
 log_file = "pytest.log"
 addopts = "--doctest-modules -v --ignore=noxfile.py"
 
+# -------------------------------------------------- COVERAGE --------------------------------------------------
+[tool.coverage.run]
+data_file = ".coverage"
+branch    = true
+parallel  = true
+
 # --------------------------------------------------  MYPY  --------------------------------------------------
 [tool.mypy]
 plugins = ["numpy.typing.mypy_plugin"]
