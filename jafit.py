@@ -124,9 +124,10 @@ def ja_solve_scalar(
             dM = ja_dM_dH(coef, H=H, M=M, dH_diff_step=H_step)
             H += sign * H_step
             M += dM * (sign * H_step)
+            B = mu_0 * (H + M)
 
             # Post-process the new data point.
-            out.append((H, M, mu_0 * M))
+            out.append((H, M, B))
             dM_dH_numeric = (M - M_old) / (H - H_old)
             if (sign > 0) == (H > 0) and dM_dH_numeric < dM_dH_saturation_threshold:
                 _logger.info(f"Sweep stopped at H={H:+.3f}, M={M:+.3f} due to saturation")
@@ -216,10 +217,28 @@ def dL_dx(x: float) -> float:
     return float(-1.0 / (np.sinh(x) ** 2) + 1.0 / (x**2))
 
 
-def visualize(sol: Solution, max_points: float = 1e4) -> None:
+# noinspection PyPep8Naming
+def bh_extrapolate(bh_curve: npt.NDArray[np.float64], H: float) -> npt.NDArray[np.float64]:
+    """
+    Takes BH curve data points and extrapolates its last segment to the specified H value.
+    This is in line with how BH curves are commonly treated in magnetic simulation software.
+    Returns the extended BH curve (take the edge element if only the extrapolated point is needed).
+    """
+    if not np.all(np.diff(bh_curve[:, 0]) > 0):
+        raise ValueError("Bad BH curve: H is not monotonically increasing")
+    if bh_curve[0, -1] >= H:
+        raise ValueError("Extrapolation not necessary: the last point of the BH curve is already at or beyond H")
+    dB_dH_ref = (bh_curve[-1, 1] - bh_curve[-2, 1]) / (bh_curve[-1, 0] - bh_curve[-2, 0])
+    B_ref_ext = bh_curve[-1, 1] + dB_dH_ref * (H - bh_curve[-1, 0])
+    return np.vstack([bh_curve, [H, B_ref_ext]])
+
+
+def visualize(sol: Solution, bh_curve_ref: npt.NDArray[np.float64], max_points: float = 1e4) -> None:
     import matplotlib.pyplot as plt
 
     fig, (ax_m, ax_b) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+
+    # Plot the curves predicted by the JA model
     for i, fragment in enumerate(sol.H_M_B_segments, start=1):
         n_points = fragment.shape[0]
         if n_points > max_points:  # Select `max_points` evenly spaced indices from the fragment
@@ -228,8 +247,14 @@ def visualize(sol: Solution, max_points: float = 1e4) -> None:
         H_vals = fragment[:, 0]
         M_vals = fragment[:, 1]
         B_vals = fragment[:, 2]
-        ax_m.plot(H_vals, M_vals, label=f"Fragment {i}")
-        ax_b.plot(H_vals, B_vals, label=f"Fragment {i}")
+        ax_m.plot(H_vals, M_vals, label=f"JA fragment {i}")
+        ax_b.plot(H_vals, B_vals, label=f"JA fragment {i}")
+
+    # Plot the reference BH curve
+    # First, extrapolate the rightmost segment to the max H value of the JA prediction
+    H_max = np.max([np.max(frag[:, 0]) for frag in sol.H_M_B_segments])
+    bh_curve_ref_ext = bh_extrapolate(bh_curve_ref, H_max)
+    ax_b.scatter(bh_curve_ref_ext[:, 0], bh_curve_ref_ext[:, 1], marker="x", label="Reference BH curve data")
 
     # Configure Magnetization subplot
     ax_m.set_title("Magnetization vs. Field")
@@ -295,7 +320,7 @@ def main() -> None:
 
     _logger.info(f"Solution contains fragments of size: {[len(x) for x in sol.H_M_B_segments]}")
 
-    visualize(sol)
+    visualize(sol, bh_curve)
 
 
 _logger = getLogger(__name__)
