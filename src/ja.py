@@ -41,7 +41,7 @@ class Coef:
         def is_positive_real(x: float) -> bool:
             return x > 0 and np.isfinite(x)
 
-        if not 0 < self.c_r <= 1:
+        if not 0 <= self.c_r <= 1:
             raise ValueError(f"c_r invalid: {self.c_r}")
         if not is_positive_real(self.M_s):
             raise ValueError(f"M_s invalid: {self.M_s}")
@@ -101,19 +101,17 @@ def solve(
     def sweep(H: float, M: float, sign: int) -> list[tuple[float, float, float]]:
         assert sign in (-1, +1)
         hm: list[tuple[float, float]] = []
-        dH_abs = 100  # TODO FIXME
+        dH_abs = 10  # TODO FIXME
         for idx in itertools.count():
             # Save the state first because we want to keep the initial point.
             hm.append((H, M))
 
             # Integrate using Heun's method (instead of Euler's) for better stability.
-            dH_diff_step = max(dH_abs * 1e-3, _EPSILON * 1e3)
             dH = sign * dH_abs
-            dM_1 = _dM_dH(coef, H=H, M=M, dH_diff_step=dH_diff_step)
-            # dM_2 = _dM_dH(coef, H=H + dH, M=M + dM_1 * dH, dH_diff_step=dH_diff_step)
-            # assert dM_1 > 0 and dM_2 > 0
-            # M = M + 0.5 * (dM_1 + dM_2) * dH
-            M = M + dM_1 * dH
+            dM_dH_1 = _dM_dH(coef, H=H, M=M, direction=sign)
+            dM_dH_2 = _dM_dH(coef, H=H + dH, M=M + dM_dH_1 * dH, direction=sign)
+            M = M + 0.5 * (dM_dH_1 + dM_dH_2) * dH
+            # M = M + dM_1 * dH  # Euler's forward method
             H = H + dH
 
             # Termination check and logging.
@@ -145,44 +143,25 @@ def solve(
 
 
 # noinspection PyPep8Naming
-def _dM_dH(coef: Coef, *, H: float, M: float, dH_diff_step: float) -> float:
+def _dM_dH(coef: Coef, *, H: float, M: float, direction: int) -> float:
     """
-    Returns dM/dH for the 1D Jiles–Atherton model, given the current applied field and magnetization.
+    Evaluates the magnetic susceptibility derivative at the given point of the M(H) curve.
+    The result is sensitive to the sign of the H change; the direction is defined as sign(dH).
+    This implements the model described in "Jiles–Atherton Magnetic Hysteresis Parameters Identification", Pop et al.
 
-    >>> fun = lambda H, M: _dM_dH(COEF_COMSOL_JA_MATERIAL, H=H, M=M, dH_diff_step=1e-3)
-    >>> assert np.isclose(fun(-1, 0), fun(+1, 0))
-    >>> assert np.isclose(fun(-1, 0.8e6), fun(+1, -0.8e6))
-    >>> assert np.isclose(fun(+1, 0.8e6), fun(-1, -0.8e6))
+    >>> fun = lambda H, M, d: _dM_dH(COEF_COMSOL_JA_MATERIAL, H=H, M=M, direction=d)
+    >>> assert np.isclose(fun(-1, 0, +1), fun(+1, 0, +1))
+    >>> assert np.isclose(fun(-1, 0.8e6, +1), fun(+1, -0.8e6, +1))
+    >>> assert np.isclose(fun(+1, 0.8e6, +1), fun(-1, -0.8e6, +1))
     """
-    assert dH_diff_step > 0
+    if direction not in (-1, +1):
+        raise ValueError(f"Invalid direction: {direction}")
 
     H_e = H + coef.alpha * M
-    M_an = coef.M_s * _langevin(np.abs(H_e) / coef.a) * np.sign(H_e)
-    # Derivative of anhysteretic magnetization M_an wrt effective H-field H_e.
-    # Derived from the above with simplification: langevin(abs(H_e)/a)*sign(H_e) => langevin(H_e/a).
+    M_an = coef.M_s * _langevin(H_e / coef.a)
     dM_an_dH_e = coef.M_s / coef.a * _dL_dx(H_e / coef.a)
-
-    # The key equation of the J-A model is:
-    #   dM = max(x*dH_e,0)*sign(x) + c_r*dM_an
-    # where:
-    #   x = k_p**-1 * (M_an-M)
-    # This form is highly unalgebraic due to the discontinuous max() and sign(),
-    # so we approximate the differential with finite differences.
-    # noinspection PyPep8Naming
-    def dM(dH: float) -> float:
-        x = (M_an - M) / coef.k_p
-        dM_an = dM_an_dH_e * dH
-        return float(np.max(x * dH, 0) * np.sign(x) + coef.c_r * dM_an)
-
-    dM_dH_e = (dM(+dH_diff_step) - dM(-dH_diff_step)) / (2 * dH_diff_step)
-
-    # To find dM/dH, recall that H_e = H + alpha*M, so:
-    #   dM/dH = (dM/dH_e) * (1 - alpha*dM/dH_e)
-    # Singularities afoot when alpha*dM/dH_e = 1, which requires special handling.
-    if np.abs(1 - coef.alpha * dM_dH_e) < _EPSILON:
-        _logger.warning(f"Singularity in dM/dH at H={H}, M={M}, H_e={H_e}, dM/dH_e={dM_dH_e}, coef={coef}")
-        return 0.0  # Avoid division by zero in pathological cases
-    return float(dM_dH_e / (1 - coef.alpha * dM_dH_e))
+    dM_irr_dH = (M_an - M) / (coef.k_p * direction * (1 - coef.c_r) - coef.alpha * (M_an - M))
+    return (coef.c_r * dM_an_dH_e + (1 - coef.c_r) * dM_irr_dH) / (1 - coef.alpha * coef.c_r)
 
 
 def _langevin(x: float) -> float:

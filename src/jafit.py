@@ -128,14 +128,15 @@ def main() -> None:
         raise ValueError("Bad BH curve: second quadrant not fully covered")
 
     coef = ja.Coef(
-        c_r=0.6,
-        M_s=610e3,
-        a=420e3,
-        k_p=750e3,
-        alpha=1.5,
+        c_r=0.00009,
+        M_s=414.8e3,
+        a=33661,
+        k_p=18964,
+        alpha=0.176,
     )
 
-    sol = ja.solve(coef, dM_dH_saturation_threshold=1e-6, H_magnitude_limit=1e6)
+    # sol = ja.solve(coef, dM_dH_saturation_threshold=1e-6, H_magnitude_limit=1e6)
+    sol = ja.solve(ja.COEF_COMSOL_JA_MATERIAL, dM_dH_saturation_threshold=1, H_magnitude_limit=1e6)
 
     _logger.info(f"Solution contains fragments of size: {[len(x) for x in sol.H_M_B_segments]}")
 
