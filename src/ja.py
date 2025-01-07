@@ -83,6 +83,7 @@ class Solution:
 def solve(
     coef: Coef,
     *,
+    tolerance: float = 1e-3,
     dM_dH_saturation_threshold: float,
     H_magnitude_limit: float,
 ) -> Solution:
@@ -100,21 +101,28 @@ def solve(
     # noinspection PyPep8Naming
     def sweep(H: float, M: float, sign: int) -> list[tuple[float, float, float]]:
         assert sign in (-1, +1)
-        hm: list[tuple[float, float]] = []
-        dH_abs = 10  # TODO FIXME
+        hm: list[tuple[float, float]] = [(H, M)]  # Keep the initial point for completeness.
+        dH_abs = tolerance  # This is just a guess that will be dynamically refined.
         for idx in itertools.count():
-            # Save the state first because we want to keep the initial point.
-            hm.append((H, M))
-
-            # Integrate using Heun's method (instead of Euler's) for better stability.
+            # Integrate using Heun's method (instead of Euler's) for better stability. Adjust step size dynamically.
             dH = sign * dH_abs
             dM_dH_1 = _dM_dH(coef, H=H, M=M, direction=sign)
-            dM_dH_2 = _dM_dH(coef, H=H + dH, M=M + dM_dH_1 * dH, direction=sign)
-            M = M + 0.5 * (dM_dH_1 + dM_dH_2) * dH
-            # M = M + dM_1 * dH  # Euler's forward method
-            H = H + dH
+            M_1 = M + dM_dH_1 * dH
+            dM_dH_2 = _dM_dH(coef, H=H + dH, M=M_1, direction=sign)
+            M_2 = M + 0.5 * (dM_dH_1 + dM_dH_2) * dH
+            if np.abs(M_1 - M_2) > tolerance:
+                dH_abs /= 2
+                if dH_abs <= (_EPSILON * 100):
+                    raise ValueError(
+                        "Convergence failure: step size too small at"
+                        f" idx={idx}, H={H:+.6f}, M={M:+.6f}, dH={dH:.9f}, dM_dH_1={dM_dH_1:.9f}, dM_dH_2={dM_dH_2:.9f}"
+                    )
+                continue
+            dH_abs *= 1.1
+            H, M = H + dH, M_2
 
             # Termination check and logging.
+            hm.append((H, M))
             dM_dH_numeric = ((hm[-1][1] - hm[-2][1]) / (hm[-1][0] - hm[-2][0])) if len(hm) > 1 else np.inf
             if (sign > 0) == (H > 0) and dM_dH_numeric < dM_dH_saturation_threshold:
                 _logger.info(f"Sweep stopped at H={H:+.3f}, M={M:+.3f} due to saturation")
@@ -123,7 +131,10 @@ def solve(
                 _logger.info(f"Sweep stopped at H={H:+.3f}, M={M:+.3f} due to H magnitude limit")
                 break
             if idx % 10000 == 0:
-                _logger.info(f"{('','↑', '↓')[sign]}#{idx}: H={H:+.3f}, M={M:+.3f}, dM/dH={dM_dH_numeric:.6f}")
+                _logger.info(
+                    f"{('','↑', '↓')[sign]}#{idx}: "
+                    f"H={H:+.3f}, M={M:+.3f}, dM/dH={dM_dH_numeric:.6f}, dH_abs={dH_abs:.6f}"
+                )
         return [(h, m, mu_0 * (h + m)) for h, m in hm]
 
     # Virgin curve to positive saturation
