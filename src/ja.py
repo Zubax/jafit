@@ -84,8 +84,8 @@ def solve(
     coef: Coef,
     *,
     tolerance: float = 1e-3,
-    dM_dH_saturation_threshold: float = 0.1,
-    H_magnitude_limit: float = 2e6,
+    saturation_susceptibility: float = 0.1,
+    H_stop_min_max: tuple[float, float] = (100e3, 3e6),
 ) -> Solution:
     """
     Solves the JA model for the given coefficients and initial conditions by sweeping the magnetization in the
@@ -93,6 +93,11 @@ def solve(
     until saturation in the opposite direction.
 
     At the moment, only scalar definition is supported, but this may be extended if necessary.
+
+    The sweeps will stop when either the magnetic susceptibility drops below the specified threshold (which indicates
+    that the material is saturated) or when the applied field magnitude exceeds ```H_stop_min_max[1]```.
+    The saturation will not be detected unless the H-field magnitude is at least ```H_stop_min_max[0]```;
+    this is done to handle certain materials that exhibit very low susceptibility at weak fields.
 
     The solver will stop the sweep early if a floating point error is raised.
     This can be paired with ``np.seterr(over="raise")`` to simply utilize the maximum range of the floating point
@@ -106,7 +111,7 @@ def solve(
     def sweep(H: float, M: float, sign: int) -> list[tuple[float, float, float]]:
         assert sign in (-1, +1)
         hm: list[tuple[float, float]] = [(H, M)]  # Keep the initial point for completeness.
-        dH_abs = tolerance  # This is just a guess that will be dynamically refined.
+        dH_abs = 1e-5  # This is just a guess that will be dynamically refined.
         for idx in itertools.count():
             # Integrate using Heun's method (instead of Euler's) for better stability.
             dH = sign * dH_abs
@@ -116,9 +121,9 @@ def solve(
                 dM_dH_2 = _dM_dH(coef, H=H + dH, M=M_1, direction=sign)
                 M_2 = M + 0.5 * (dM_dH_1 + dM_dH_2) * dH
             except FloatingPointError as ex:
-                if idx < 100:
-                    raise
-                _logger.info(f"Sweep stopped at step #{idx}, H={H:+.3f}, M={M:+.3f} due to floating point error: {ex}")
+                _logger.warning(
+                    f"Sweep stopped at step #{idx}, H={H:+.3f}, M={M:+.3f} due to floating point error: {ex}"
+                )
                 break
 
             # Check if the tolerance is acceptable, only accept the data point if it is; otherwise refine and retry.
@@ -130,23 +135,23 @@ def solve(
                         f" idx={idx}, H={H:+.6f}, M={M:+.6f}, dH={dH:.9f}, dM_dH_1={dM_dH_1:.9f}, dM_dH_2={dM_dH_2:.9f}"
                     )
                 continue
+
             dH_abs *= 1.1
             H, M = H + dH, M_2
+            hm.append((H, M))
 
             # Termination check and logging.
-            hm.append((H, M))
-            dM_dH_numeric = ((hm[-1][1] - hm[-2][1]) / (hm[-1][0] - hm[-2][0])) if len(hm) > 1 else np.inf
-            if (sign > 0) == (H > 0) and dM_dH_numeric < dM_dH_saturation_threshold:
-                _logger.info(f"Sweep stopped at step #{idx}, H={H:+.3f}, M={M:+.3f} due to saturation")
+            chi = np.abs((hm[-1][1] - hm[-2][1]) / (hm[-1][0] - hm[-2][0])) if len(hm) > 1 else np.inf
+            if (sign > 0) == (H > 0) and chi < saturation_susceptibility and H * sign >= H_stop_min_max[0]:
+                _logger.info(f"Sweep stopped at step #{idx}, H={H:+.3f}, M={M:+.3f} due to saturation: χ={chi:.6f}")
                 break
-            if H * sign > H_magnitude_limit:
+
+            if H * sign > H_stop_min_max[1]:
                 _logger.info(f"Sweep stopped at step #{idx}, H={H:+.3f}, M={M:+.3f} due to H magnitude limit")
                 break
+
             if idx % 10000 == 0:
-                _logger.info(
-                    f"{('','↑', '↓')[sign]}#{idx}: "
-                    f"H={H:+.3f}, M={M:+.3f}, dM/dH={dM_dH_numeric:.6f}, dH_abs={dH_abs:.6f}"
-                )
+                _logger.info(f"{('','↑', '↓')[sign]}#{idx}: " f"H={H:+.3f}, M={M:+.3f}, χ={chi:.6f}, |dH|={dH_abs:.6f}")
         return [(h, m, mu_0 * (h + m)) for h, m in hm]
 
     # Virgin curve to positive saturation

@@ -180,7 +180,7 @@ def main() -> None:
         alpha=0.176,
     )
 
-    # sol = ja.solve(coef, dM_dH_saturation_threshold=1e-6, H_magnitude_limit=1e6)
+    # sol = ja.solve(coef)
     sol = ja.solve(ja.COEF_COMSOL_JA_MATERIAL)
 
     _logger.info(f"Solution contains fragments of size: {[len(x) for x in sol.H_M_B_segments]}")
