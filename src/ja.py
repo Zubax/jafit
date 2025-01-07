@@ -161,9 +161,11 @@ def _dM_dH(coef: Coef, *, H: float, M: float, direction: int) -> float:
     This implements the model described in "Jiles–Atherton Magnetic Hysteresis Parameters Identification", Pop et al.
 
     >>> fun = lambda H, M, d: _dM_dH(COEF_COMSOL_JA_MATERIAL, H=H, M=M, direction=d)
-    >>> assert np.isclose(fun(-1, 0, +1), fun(+1, 0, +1))
-    >>> assert np.isclose(fun(-1, 0.8e6, +1), fun(+1, -0.8e6, +1))
-    >>> assert np.isclose(fun(+1, 0.8e6, +1), fun(-1, -0.8e6, +1))
+    >>> assert np.isclose(fun(0, 0, +1), fun(0, 0, -1))
+    >>> assert np.isclose(fun(+1, 0, +1), fun(-1, 0, -1))
+    >>> assert np.isclose(fun(-1, 0, +1), fun(+1, 0, -1))
+    >>> assert np.isclose(fun(-1, 0.8e6, +1), fun(+1, -0.8e6, -1))
+    >>> assert np.isclose(fun(+1, 0.8e6, +1), fun(-1, -0.8e6, -1))
     """
     if direction not in (-1, +1):
         raise ValueError(f"Invalid direction: {direction}")
