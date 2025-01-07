@@ -84,8 +84,8 @@ def solve(
     coef: Coef,
     *,
     tolerance: float = 1e-3,
-    dM_dH_saturation_threshold: float,
-    H_magnitude_limit: float,
+    dM_dH_saturation_threshold: float = 0.1,
+    H_magnitude_limit: float = 2e6,
 ) -> Solution:
     """
     Solves the JA model for the given coefficients and initial conditions by sweeping the magnetization in the
@@ -93,6 +93,10 @@ def solve(
     until saturation in the opposite direction.
 
     At the moment, only scalar definition is supported, but this may be extended if necessary.
+
+    The solver will stop the sweep early if a floating point error is raised.
+    This can be paired with ``np.seterr(over="raise")`` to simply utilize the maximum range of the floating point
+    representation without any special handling.
 
     Returns sample points for the H, M, and B fields in the order of their appearance.
     """
@@ -104,12 +108,20 @@ def solve(
         hm: list[tuple[float, float]] = [(H, M)]  # Keep the initial point for completeness.
         dH_abs = tolerance  # This is just a guess that will be dynamically refined.
         for idx in itertools.count():
-            # Integrate using Heun's method (instead of Euler's) for better stability. Adjust step size dynamically.
+            # Integrate using Heun's method (instead of Euler's) for better stability.
             dH = sign * dH_abs
-            dM_dH_1 = _dM_dH(coef, H=H, M=M, direction=sign)
-            M_1 = M + dM_dH_1 * dH
-            dM_dH_2 = _dM_dH(coef, H=H + dH, M=M_1, direction=sign)
-            M_2 = M + 0.5 * (dM_dH_1 + dM_dH_2) * dH
+            try:
+                dM_dH_1 = _dM_dH(coef, H=H, M=M, direction=sign)
+                M_1 = M + dM_dH_1 * dH
+                dM_dH_2 = _dM_dH(coef, H=H + dH, M=M_1, direction=sign)
+                M_2 = M + 0.5 * (dM_dH_1 + dM_dH_2) * dH
+            except FloatingPointError as ex:
+                if idx < 100:
+                    raise
+                _logger.info(f"Sweep stopped at step #{idx}, H={H:+.3f}, M={M:+.3f} due to floating point error: {ex}")
+                break
+
+            # Check if the tolerance is acceptable, only accept the data point if it is; otherwise refine and retry.
             if np.abs(M_1 - M_2) > tolerance:
                 dH_abs /= 2
                 if dH_abs <= (_EPSILON * 100):
@@ -125,10 +137,10 @@ def solve(
             hm.append((H, M))
             dM_dH_numeric = ((hm[-1][1] - hm[-2][1]) / (hm[-1][0] - hm[-2][0])) if len(hm) > 1 else np.inf
             if (sign > 0) == (H > 0) and dM_dH_numeric < dM_dH_saturation_threshold:
-                _logger.info(f"Sweep stopped at H={H:+.3f}, M={M:+.3f} due to saturation")
+                _logger.info(f"Sweep stopped at step #{idx}, H={H:+.3f}, M={M:+.3f} due to saturation")
                 break
-            if np.abs(H) > H_magnitude_limit:
-                _logger.info(f"Sweep stopped at H={H:+.3f}, M={M:+.3f} due to H magnitude limit")
+            if H * sign > H_magnitude_limit:
+                _logger.info(f"Sweep stopped at step #{idx}, H={H:+.3f}, M={M:+.3f} due to H magnitude limit")
                 break
             if idx % 10000 == 0:
                 _logger.info(

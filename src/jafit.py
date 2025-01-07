@@ -14,6 +14,7 @@ from logging import getLogger, basicConfig
 from pathlib import Path
 import numpy as np
 import numpy.typing as npt
+import scipy.optimize as opt
 import matplotlib
 import ja
 
@@ -37,6 +38,54 @@ def bh_extrapolate(bh_curve: npt.NDArray[np.float64], H: float) -> npt.NDArray[n
     dB_dH_ref = (bh_curve[-1, 1] - bh_curve[-2, 1]) / (bh_curve[-1, 0] - bh_curve[-2, 0])
     B_ref_ext = bh_curve[-1, 1] + dB_dH_ref * (H - bh_curve[-1, 0])
     return np.vstack([bh_curve, [H, B_ref_ext]])
+
+
+def bh_check(bh: npt.NDArray[np.float64]) -> None:
+    if not (bh[0, 0] < 0 <= bh[-1, 0] and bh[0, 1] <= 0 < bh[-1, 1]):
+        raise ValueError("Bad BH curve: second quadrant not fully covered")
+    if not np.all(np.diff(bh[:, 0]) >= 0):
+        raise ValueError("Bad BH curve: H is not monotonically non-decreasing")
+    if not np.all(np.diff(bh[:, 1]) >= 0):
+        raise ValueError("Bad BH curve: B is not monotonically non-decreasing")
+    if len(bh) < 5:
+        raise ValueError(f"Bad BH curve: too few data points: {len(bh)}")
+
+
+def loss(bh_ref: npt.NDArray[np.float64], sol: ja.Solution) -> float:
+    """
+    Dissimilarity metric between the BH curve and the JA model prediction.
+    The BH curve must go through the entire second quadrant, possibly extending into the first and/or third quadrants.
+    The solution must contain the demagnetization curve that at least covers the second quadrant.
+    """
+    bh_check(bh_ref)
+    if len(sol.H_M_B_segments) < 2:
+        raise ValueError("Bad solution: expected more segments: virgin, major loop demag, major loop mag")
+    bh_sol = sol.H_M_B_segments[1][:, 0:2]
+    if not (bh_sol[-1, 0] < 0 <= bh_sol[0, 0] and bh_sol[-1, 1] <= 0 < bh_sol[0, 1]):
+        raise ValueError("Bad solution: demagnetization segment does not cover the second quadrant (wrong segment?)")
+    if not np.all(np.diff(bh_sol[:, 0]) <= 0):
+        raise ValueError("Bad solution: H is not monotonically non-increasing in the demagnetization segment")
+    if not np.all(np.diff(bh_ref[:, 1]) <= 0):
+        raise ValueError("Bad solution: B is not monotonically non-increasing in the demagnetization segment")
+    bh_sol = bh_sol[::-1]  # Reverse the demagnetization segment to match the BH curve
+    assert bh_sol[0, 0] < 0 <= bh_sol[-1, 0] and bh_sol[0, 1] <= 0 < bh_sol[-1, 1]
+
+    # Trim bh_sol such that it matches the range of H in bh_ref
+    bh_sol = bh_sol[(bh_sol[:, 0] >= bh_ref[0, 0]) & (bh_sol[:, 0] <= bh_ref[-1, 0])]
+    if len(bh_sol) < 10:
+        raise ValueError("Bad solution: demagnetization segment is too short after trimming")
+    if len(bh_sol) < len(bh_ref):
+        _logger.warning(
+            "After trimming, the solution contains fewer sample points than the reference BH curve: "
+            "solution length=%d, BH curve length=%d",
+            len(bh_sol),
+            len(bh_ref),
+        )
+    assert bh_sol[0, 0] >= bh_ref[0, 0] and bh_sol[-1, 0] <= bh_ref[-1, 0]
+
+    # Interpolate the JA model and compute the root mean square error
+    bh_sol_interp = np.interp(bh_ref[:, 0], bh_sol[:, 0], bh_sol[:, 1])
+    return float(np.sqrt(np.mean((bh_ref[:, 1] - bh_sol_interp) ** 2)))
 
 
 # noinspection PyPep8Naming
@@ -115,17 +164,13 @@ def main() -> None:
         level="INFO",
         format="%(asctime)s %(levelname)-3.3s %(name)s: %(message)s",
     )
+    np.seterr(over="raise")
 
     # Load and validate the BH curve. The curve must at least cover the entire second quadrant.
     # It may span further into the first and possibly third quadrants for greater accuracy, but this is not required.
     bh_curve = load_bh_curve(Path(sys.argv[1]))
     _logger.info("BH curve loaded:\r%s", bh_curve)
-    if not np.all(np.diff(bh_curve[:, 0]) > 0):
-        raise ValueError("Bad BH curve: H is not monotonically increasing")
-    if not np.all(np.diff(bh_curve[:, 1]) > 0):
-        raise ValueError("Bad BH curve: B is not monotonically increasing")
-    if bh_curve[0, 0] >= 0 or bh_curve[0, 1] < 0 or bh_curve[-1, 0] < 0 or bh_curve[-1, 1] <= 0:
-        raise ValueError("Bad BH curve: second quadrant not fully covered")
+    bh_check(bh_curve)
 
     coef = ja.Coef(
         c_r=0.00009,
@@ -136,7 +181,7 @@ def main() -> None:
     )
 
     # sol = ja.solve(coef, dM_dH_saturation_threshold=1e-6, H_magnitude_limit=1e6)
-    sol = ja.solve(ja.COEF_COMSOL_JA_MATERIAL, dM_dH_saturation_threshold=0.1, H_magnitude_limit=1e6)
+    sol = ja.solve(ja.COEF_COMSOL_JA_MATERIAL)
 
     _logger.info(f"Solution contains fragments of size: {[len(x) for x in sol.H_M_B_segments]}")
 
