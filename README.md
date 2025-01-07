@@ -15,7 +15,7 @@ Install the dependencies before the first invocation: `pip install -r requiremen
 then run:
 
 ```bash
-python3 ./jafit.py test-data/bh-lng37.tab
+python3 src/jafit.py test-data/bh-lng37.tab
 ```
 
 ## Development

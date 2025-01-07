@@ -1,7 +1,7 @@
 # --------------------------------------------------  PYTEST  --------------------------------------------------
 [tool.pytest.ini_options]
-testpaths = "."
-python_files = "jafit.py"
+testpaths = "src"
+python_files = "*.py"
 log_level = "DEBUG"
 log_cli_level = "WARNING"
 log_cli = true
@@ -36,5 +36,7 @@ ignore_missing_imports = true
 line-length = 120
 target-version = ['py313']
 include = '''
-(.*\.pyi?$)
+(src/.*\.pyi?$)
+|
+(noxfile.py$)
 '''
