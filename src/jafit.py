@@ -5,21 +5,11 @@
 This is a simple utility that fits the Jiles-Atherton (JA) model coefficients for a given BH curve.
 The JA model used here follows that of COMSOL Multiphysics; see the enclosed PDF with the relevant excerpt
 from the COMSOL user reference.
-
-The following coefficients are defined; per the model definition, all of them can be scalars or 3x3 matrices:
-
-Symbol  Description                                                         Range           Unit
-c_r     magnetization reversibility (1 for purely anhysteretic material)    (0, 1]          dimensionless
-M_s     saturation magnetization                                            positive real   ampere/meter
-a       domain wall density                                                 positive real   ampere/meter
-k_p     pinning loss                                                        positive real   ampere/meter
-alpha   interdomain coupling                                                non-negative    dimensionless
 """
 
 from __future__ import annotations
 import os
 import sys
-import copy
 from logging import getLogger, basicConfig
 from pathlib import Path
 import numpy as np
@@ -42,13 +32,19 @@ def bh_extrapolate(bh_curve: npt.NDArray[np.float64], H: float) -> npt.NDArray[n
     if not np.all(np.diff(bh_curve[:, 0]) > 0):
         raise ValueError("Bad BH curve: H is not monotonically increasing")
     if bh_curve[0, -1] >= H:
-        raise ValueError("Extrapolation not necessary: the last point of the BH curve is already at or beyond H")
+        _logger.debug("Extrapolation not necessary: the last point of the BH curve is already at or beyond H")
+        return bh_curve
     dB_dH_ref = (bh_curve[-1, 1] - bh_curve[-2, 1]) / (bh_curve[-1, 0] - bh_curve[-2, 0])
     B_ref_ext = bh_curve[-1, 1] + dB_dH_ref * (H - bh_curve[-1, 0])
     return np.vstack([bh_curve, [H, B_ref_ext]])
 
 
-def visualize(sol: ja.Solution, bh_curve_ref: npt.NDArray[np.float64], max_points: float = 1e4) -> None:
+# noinspection PyPep8Naming
+def visualize(
+    sol: ja.Solution,
+    bh_curve_ref: npt.NDArray[np.float64] | None = None,
+    max_points: float = 1e4,
+) -> None:
     import matplotlib.pyplot as plt
 
     fig, (ax_m, ax_b) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
@@ -66,10 +62,11 @@ def visualize(sol: ja.Solution, bh_curve_ref: npt.NDArray[np.float64], max_point
         ax_b.plot(H_vals, B_vals, label=f"JA fragment {i}")
 
     # Plot the reference BH curve
-    # First, extrapolate the rightmost segment to the max H value of the JA prediction
-    H_max = np.max([np.max(frag[:, 0]) for frag in sol.H_M_B_segments])
-    bh_curve_ref_ext = bh_extrapolate(bh_curve_ref, H_max)
-    ax_b.scatter(bh_curve_ref_ext[:, 0], bh_curve_ref_ext[:, 1], marker="x", label="Reference BH curve data")
+    if bh_curve_ref is not None:
+        # First, extrapolate the rightmost segment to the max H value of the JA prediction
+        H_max = np.max([np.max(frag[:, 0]) for frag in sol.H_M_B_segments])
+        bh_curve_ref_ext = bh_extrapolate(bh_curve_ref, H_max)
+        ax_b.scatter(bh_curve_ref_ext[:, 0], bh_curve_ref_ext[:, 1], marker="x", label="Reference BH curve data")
 
     # Configure Magnetization subplot
     ax_m.set_title("Magnetization vs. Field")
@@ -119,7 +116,8 @@ def main() -> None:
         format="%(asctime)s %(levelname)-3.3s %(name)s: %(message)s",
     )
 
-    # Load and validate the BH curve
+    # Load and validate the BH curve. The curve must at least cover the entire second quadrant.
+    # It may span further into the first and possibly third quadrants for greater accuracy, but this is not required.
     bh_curve = load_bh_curve(Path(sys.argv[1]))
     _logger.info("BH curve loaded:\r%s", bh_curve)
     if not np.all(np.diff(bh_curve[:, 0]) > 0):
@@ -129,13 +127,20 @@ def main() -> None:
     if bh_curve[0, 0] >= 0 or bh_curve[0, 1] < 0 or bh_curve[-1, 0] < 0 or bh_curve[-1, 1] <= 0:
         raise ValueError("Bad BH curve: second quadrant not fully covered")
 
-    coef = copy.copy(ja.COEF_INITIAL)
+    coef = ja.Coef(
+        c_r=0.6,
+        M_s=610e3,
+        a=420e3,
+        k_p=750e3,
+        alpha=1.5,
+    )
 
-    sol = ja.solve(coef, H_step=1.0, dM_dH_saturation_threshold=1.0, H_magnitude_limit=1e6)
+    sol = ja.solve(coef, dM_dH_saturation_threshold=1e-6, H_magnitude_limit=1e6)
 
     _logger.info(f"Solution contains fragments of size: {[len(x) for x in sol.H_M_B_segments]}")
 
-    visualize(sol, bh_curve)
+    # visualize(sol, bh_curve)
+    visualize(sol)
 
 
 _logger = getLogger(__name__)
