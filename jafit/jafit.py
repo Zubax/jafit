@@ -96,7 +96,7 @@ def visualize(
 ) -> None:
     import matplotlib.pyplot as plt
 
-    fig, (ax_m, ax_b) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+    fig, (ax_m, ax_b) = plt.subplots(2, 1, figsize=(12, 10), sharex="all")
 
     # Plot the curves predicted by the JA model
     for i, fragment in enumerate(sol.H_M_B_segments, start=1):

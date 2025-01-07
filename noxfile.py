@@ -37,7 +37,7 @@ def test(session):
     session.install("-r", "requirements.txt")
 
     session.install("pytest ~= 8.3", "mypy ~= 1.14", "coverage ~= 7.6")
-    session.run("coverage", "run", "src/jafit.py", "test-data/bh-lng37.tab")
+    session.run("coverage", "run", "jafit/jafit.py", "test-data/bh-lng37.tab")
     session.run("coverage", "run", "-m", "pytest")
 
     session.run("coverage", "combine")

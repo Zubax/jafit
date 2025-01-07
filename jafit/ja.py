@@ -121,9 +121,7 @@ def solve(
                 dM_dH_2 = _dM_dH(coef, H=H + dH, M=M_1, direction=sign)
                 M_2 = M + 0.5 * (dM_dH_1 + dM_dH_2) * dH
             except FloatingPointError as ex:
-                _logger.warning(
-                    f"Sweep stopped at step #{idx}, H={H:+.3f}, M={M:+.3f} due to floating point error: {ex}"
-                )
+                _logger.warning(f"Sweep stopped @#{idx}, H={H:+.3f}, M={M:+.3f} due to floating point error: {ex}")
                 break
 
             # Check if the tolerance is acceptable, only accept the data point if it is; otherwise refine and retry.
@@ -143,11 +141,11 @@ def solve(
             # Termination check and logging.
             chi = np.abs((hm[-1][1] - hm[-2][1]) / (hm[-1][0] - hm[-2][0])) if len(hm) > 1 else np.inf
             if (sign > 0) == (H > 0) and chi < saturation_susceptibility and H * sign >= H_stop_min_max[0]:
-                _logger.info(f"Sweep stopped at step #{idx}, H={H:+.3f}, M={M:+.3f} due to saturation: χ={chi:.6f}")
+                _logger.info(f"Sweep stopped @#{idx}, H={H:+.3f}, M={M:+.3f} due to saturation: χ={chi:.6f}")
                 break
 
             if H * sign > H_stop_min_max[1]:
-                _logger.info(f"Sweep stopped at step #{idx}, H={H:+.3f}, M={M:+.3f} due to H magnitude limit")
+                _logger.info(f"Sweep stopped @#{idx}, H={H:+.3f}, M={M:+.3f} due to H magnitude limit")
                 break
 
             if idx % 10000 == 0:
