@@ -85,7 +85,7 @@ def solve(
     *,
     tolerance: float = 1e-3,
     saturation_susceptibility: float = 0.1,
-    H_stop_min_max: tuple[float, float] = (100e3, 3e6),
+    H_stop_range: tuple[float, float] = (100e3, 3e6),
 ) -> Solution:
     """
     Solves the JA model for the given coefficients and initial conditions by sweeping the magnetization in the
@@ -95,8 +95,8 @@ def solve(
     At the moment, only scalar definition is supported, but this may be extended if necessary.
 
     The sweeps will stop when either the magnetic susceptibility drops below the specified threshold (which indicates
-    that the material is saturated) or when the applied field magnitude exceeds ```H_stop_min_max[1]```.
-    The saturation will not be detected unless the H-field magnitude is at least ```H_stop_min_max[0]```;
+    that the material is saturated) or when the applied field magnitude exceeds ```H_stop_range[1]```.
+    The saturation will not be detected unless the H-field magnitude is at least ```H_stop_range[0]```;
     this is done to handle certain materials that exhibit very low susceptibility at weak fields.
 
     The solver will stop the sweep early if a floating point error is raised.
@@ -140,11 +140,11 @@ def solve(
 
             # Termination check and logging.
             chi = np.abs((hm[-1][1] - hm[-2][1]) / (hm[-1][0] - hm[-2][0])) if len(hm) > 1 else np.inf
-            if (sign > 0) == (H > 0) and chi < saturation_susceptibility and H * sign >= H_stop_min_max[0]:
+            if (sign > 0) == (H > 0) and chi < saturation_susceptibility and H * sign >= H_stop_range[0]:
                 _logger.info(f"Sweep stopped @#{idx}, H={H:+.3f}, M={M:+.3f} due to saturation: χ={chi:.6f}")
                 break
 
-            if H * sign > H_stop_min_max[1]:
+            if H * sign > H_stop_range[1]:
                 _logger.info(f"Sweep stopped @#{idx}, H={H:+.3f}, M={M:+.3f} due to H magnitude limit")
                 break
 

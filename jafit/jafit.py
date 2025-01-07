@@ -43,8 +43,8 @@ def bh_extrapolate(bh_curve: npt.NDArray[np.float64], H: float) -> npt.NDArray[n
 def bh_check(bh: npt.NDArray[np.float64]) -> None:
     if not (bh[0, 0] < 0 <= bh[-1, 0] and bh[0, 1] <= 0 < bh[-1, 1]):
         raise ValueError("Bad BH curve: second quadrant not fully covered")
-    if not np.all(np.diff(bh[:, 0]) >= 0):
-        raise ValueError("Bad BH curve: H is not monotonically non-decreasing")
+    if not np.all(np.diff(bh[:, 0]) > 0):
+        raise ValueError("Bad BH curve: H is not monotonically increasing")
     if not np.all(np.diff(bh[:, 1]) >= 0):
         raise ValueError("Bad BH curve: B is not monotonically non-decreasing")
     if len(bh) < 5:
@@ -63,8 +63,8 @@ def loss(bh_ref: npt.NDArray[np.float64], sol: ja.Solution) -> float:
     bh_sol = sol.H_M_B_segments[1][:, 0:2]
     if not (bh_sol[-1, 0] < 0 <= bh_sol[0, 0] and bh_sol[-1, 1] <= 0 < bh_sol[0, 1]):
         raise ValueError("Bad solution: demagnetization segment does not cover the second quadrant (wrong segment?)")
-    if not np.all(np.diff(bh_sol[:, 0]) <= 0):
-        raise ValueError("Bad solution: H is not monotonically non-increasing in the demagnetization segment")
+    if not np.all(np.diff(bh_sol[:, 0]) < 0):
+        raise ValueError("Bad solution: H is not monotonically decreasing in the demagnetization segment")
     if not np.all(np.diff(bh_ref[:, 1]) <= 0):
         raise ValueError("Bad solution: B is not monotonically non-increasing in the demagnetization segment")
     bh_sol = bh_sol[::-1]  # Reverse the demagnetization segment to match the BH curve
@@ -83,7 +83,7 @@ def loss(bh_ref: npt.NDArray[np.float64], sol: ja.Solution) -> float:
         )
     assert bh_sol[0, 0] >= bh_ref[0, 0] and bh_sol[-1, 0] <= bh_ref[-1, 0]
 
-    # Interpolate the JA model and compute the root mean square error
+    # Interpolate the JA model and compute the root-mean-square error
     bh_sol_interp = np.interp(bh_ref[:, 0], bh_sol[:, 0], bh_sol[:, 1])
     return float(np.sqrt(np.mean((bh_ref[:, 1] - bh_sol_interp) ** 2)))
 
