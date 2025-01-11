@@ -5,11 +5,17 @@
       <w>atherson</w>
       <w>atherton</w>
       <w>comsol</w>
+      <w>demag</w>
+      <w>fatol</w>
+      <w>ftol</w>
+      <w>gtol</w>
       <w>interdomain</w>
       <w>kirienko</w>
       <w>langevin</w>
+      <w>maxiter</w>
       <w>multiphysics</w>
       <w>unalgebraic</w>
+      <w>xatol</w>
     </words>
   </dictionary>
 </component>

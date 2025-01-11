@@ -2,7 +2,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.tmp
+*.out
 .Python
+tmp/
+out/
 build/
 develop-eggs/
 dist/
@@ -77,6 +81,10 @@ dmypy.json
 .pytype/
 cython_debug/
 .pypirc
+*.png
+*.svg
+*.prof
+*.json
 **/.idea/*
 !/.idea/dictionaries
 !/.idea/dictionaries/*

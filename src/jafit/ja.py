@@ -11,11 +11,24 @@ from logging import getLogger
 import dataclasses
 import numpy as np
 import numpy.typing as npt
+from .util import njit
 
 
 mu_0 = 1.2566370614359173e-6  # Vacuum permeability [henry/meter]
 
 _EPSILON = 1e-9  # Small number for numerical stability
+
+
+class SolverError(RuntimeError):
+    pass
+
+
+class ConvergenceFailureError(SolverError):
+    pass
+
+
+class NumericalFailureError(SolverError):
+    pass
 
 
 @dataclasses.dataclass(frozen=True)
@@ -24,10 +37,10 @@ class Coef:
     Per the original model definition, all of them can be scalars or 3x3 matrices:
 
         Symbol  Description                                                         Range           Unit
-        c_r     magnetization reversibility (1 for purely anhysteretic material)    (0, 1]          dimensionless
-        M_s     saturation magnetization                                            positive real   ampere/meter
-        a       domain wall density                                                 positive real   ampere/meter
-        k_p     pinning loss                                                        positive real   ampere/meter
+        c_r     magnetization reversibility (1 for purely anhysteretic material)    [0, 1]          dimensionless
+        M_s     saturation magnetization                                            non-negative    ampere/meter
+        a       domain wall density                                                 non-negative    ampere/meter
+        k_p     pinning loss                                                        non-negative    ampere/meter
         alpha   interdomain coupling                                                non-negative    dimensionless
     """
 
@@ -38,45 +51,41 @@ class Coef:
     alpha: float
 
     def __post_init__(self) -> None:
-        def is_positive_real(x: float) -> bool:
-            return x > 0 and np.isfinite(x)
+        def non_negative(x: float) -> bool:
+            return x >= 0 and np.isfinite(x)
 
         if not 0 <= self.c_r <= 1:
             raise ValueError(f"c_r invalid: {self.c_r}")
-        if not is_positive_real(self.M_s):
+        if not non_negative(self.M_s):
             raise ValueError(f"M_s invalid: {self.M_s}")
-        if not is_positive_real(self.a):
+        if not non_negative(self.a):
             raise ValueError(f"a invalid: {self.a}")
-        if not is_positive_real(self.k_p):
+        if not non_negative(self.k_p):
             raise ValueError(f"k_p invalid: {self.k_p}")
-        if self.alpha < 0:
+        if not non_negative(self.alpha):
             raise ValueError(f"alpha invalid: {self.alpha}")
 
 
-COEF_COMSOL_JA_MATERIAL = Coef(
-    c_r=0.1,
-    M_s=1e6,
-    a=560,
-    k_p=1200,
-    alpha=0.0007,
-)
+COEF_COMSOL_JA_MATERIAL = Coef(c_r=0.1, M_s=1e6, a=560, k_p=1200, alpha=0.0007)
 """
 Values are taken from the material properties named "Jiles-Atherton Hysteretic Material" in COMSOL Multiphysics.
-Usefuil for testing and validation.
+Useful for testing and validation.
 """
 
 
 @dataclasses.dataclass(frozen=True)
 class Solution:
-    H_M_B_segments: list[npt.NDArray[np.float64]]
     """
-    A list of hysteresis loop fragments in the order of appearance.
-    The first fragment is from zero to forward saturation, then to reverse saturation, then back forward.
-    This results in the construction of the full hysteresis loop starting from the virgin curve.
-
-    Each fragment contains an nx3 matrix, where the columns are the applied field H, magnetization M,
+    Each curve segment contains an nx3 matrix, where the columns are the applied field H, magnetization M,
     and flux density B, respectively; one row per sample point.
     """
+
+    HMB_virgin: npt.NDArray[np.float64]
+    HMB_major_descending: npt.NDArray[np.float64]
+    HMB_major_ascending: npt.NDArray[np.float64] | None = None
+
+    # TODO balancing: mirror the ascending curve around the origin and merge it with the descending curve
+    # Requires interpolation.
 
 
 # noinspection PyPep8Naming
@@ -86,6 +95,7 @@ def solve(
     tolerance: float = 1e-3,
     saturation_susceptibility: float = 0.1,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
+    no_ascent: bool = False,
 ) -> Solution:
     """
     Solves the JA model for the given coefficients and initial conditions by sweeping the magnetization in the
@@ -105,93 +115,95 @@ def solve(
 
     Returns sample points for the H, M, and B fields in the order of their appearance.
     """
-    hmb_fragments: list[list[tuple[float, float, float]]] = []
+    c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
 
     # noinspection PyPep8Naming
-    def sweep(H: float, M: float, sign: int) -> list[tuple[float, float, float]]:
+    def sweep_hmb(H: float, M: float, sign: int) -> npt.NDArray[np.float64]:
         assert sign in (-1, +1)
         hm: list[tuple[float, float]] = [(H, M)]  # Keep the initial point for completeness.
-        dH_abs = 1e-5  # This is just a guess that will be dynamically refined.
+        dH_abs = 1e-3  # This is just a guess that will be dynamically refined.
         for idx in itertools.count():
             # Integrate using Heun's method (instead of Euler's) for better stability.
             dH = sign * dH_abs
             try:
-                dM_dH_1 = _dM_dH(coef, H=H, M=M, direction=sign)
+                dM_dH_1 = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=H, M=M, direction=sign)
                 M_1 = M + dM_dH_1 * dH
-                dM_dH_2 = _dM_dH(coef, H=H + dH, M=M_1, direction=sign)
+                dM_dH_2 = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=H + dH, M=M_1, direction=sign)
                 M_2 = M + 0.5 * (dM_dH_1 + dM_dH_2) * dH
-            except FloatingPointError as ex:
-                _logger.warning(f"Sweep stopped @#{idx}, H={H:+.3f}, M={M:+.3f} due to floating point error: {ex}")
+            except (FloatingPointError, ZeroDivisionError) as ex:
+                if idx < 10:
+                    raise NumericalFailureError(f"Numerical failure @#{idx}, H={H:+.6f}, M={M:+.6f}") from ex
+                _logger.warning(
+                    "Sweep stopped @#%s, H=%+.3f, M=%+.3f, dH=%+.6f due to numerical error: %s", idx, H, M, dH, ex
+                )
                 break
 
             # Check if the tolerance is acceptable, only accept the data point if it is; otherwise refine and retry.
             if np.abs(M_1 - M_2) > tolerance:
                 dH_abs /= 2
                 if dH_abs <= (_EPSILON * 100):
-                    raise ValueError(
-                        "Convergence failure: step size too small at"
-                        f" idx={idx}, H={H:+.6f}, M={M:+.6f}, dH={dH:.9f}, dM_dH_1={dM_dH_1:.9f}, dM_dH_2={dM_dH_2:.9f}"
+                    raise ConvergenceFailureError(
+                        "Step size too small: "
+                        f"idx={idx}, H={H:+.6f}, M={M:+.6f}, dH={dH:.9f}, dM_dH_1={dM_dH_1:.9f}, dM_dH_2={dM_dH_2:.9f}"
                     )
                 continue
 
-            dH_abs *= 1.1
+            dH_abs = min(dH_abs * 1.1, 1e3)
             H, M = H + dH, M_2
             hm.append((H, M))
 
             # Termination check and logging.
             chi = np.abs((hm[-1][1] - hm[-2][1]) / (hm[-1][0] - hm[-2][0])) if len(hm) > 1 else np.inf
             if (sign > 0) == (H > 0) and chi < saturation_susceptibility and H * sign >= H_stop_range[0]:
-                _logger.info(f"Sweep stopped @#{idx}, H={H:+.3f}, M={M:+.3f} due to saturation: χ={chi:.6f}")
+                _logger.debug(f"Sweep stopped @#{idx}, H={H:+.3f}, M={M:+.3f} due to saturation: x={chi:.6f}")
                 break
 
             if H * sign > H_stop_range[1]:
-                _logger.info(f"Sweep stopped @#{idx}, H={H:+.3f}, M={M:+.3f} due to H magnitude limit")
+                _logger.debug(f"Sweep stopped @#{idx}, H={H:+.3f}, M={M:+.3f} due to H magnitude limit")
                 break
 
-            if idx % 10000 == 0:
-                _logger.info(f"{('','↑', '↓')[sign]}#{idx}: " f"H={H:+.3f}, M={M:+.3f}, χ={chi:.6f}, |dH|={dH_abs:.6f}")
-        return [(h, m, mu_0 * (h + m)) for h, m in hm]
+        out = np.array([(h, m, mu_0 * (h + m)) for h, m in hm], dtype=np.float64)
+        out.setflags(write=False)
+        return out
 
-    # Virgin curve to positive saturation
-    hmb_fragments.append(sweep(0, 0, +1))
+    hmb_virgin = sweep_hmb(0, 0, +1)
 
-    # Reverse sweep to negative saturation
-    H_last, M_last = hmb_fragments[-1][-1][0], hmb_fragments[-1][-1][1]
-    hmb_fragments.append(sweep(H_last, M_last, -1))
+    H_last, M_last, _ = hmb_virgin[-1]
+    hmb_maj_dsc = sweep_hmb(H_last, M_last, -1)
 
-    # Forward sweep to positive saturation to complete the major loop
-    H_last, M_last = hmb_fragments[-1][-1][0], hmb_fragments[-1][-1][1]
-    hmb_fragments.append(sweep(H_last, M_last, +1))
+    hmb_maj_asc: npt.NDArray[np.float64] | None = None
+    if not no_ascent:
+        H_last, M_last, _ = hmb_maj_dsc[-1]
+        hmb_maj_asc = sweep_hmb(H_last, M_last, +1)
 
-    return Solution(
-        H_M_B_segments=[np.array(x, dtype=np.float64) for x in hmb_fragments],
-    )
+    return Solution(HMB_virgin=hmb_virgin, HMB_major_descending=hmb_maj_dsc, HMB_major_ascending=hmb_maj_asc)
 
 
 # noinspection PyPep8Naming
-def _dM_dH(coef: Coef, *, H: float, M: float, direction: int) -> float:
+@njit(nogil=True)
+def _dM_dH(*, c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, direction: int) -> float:
+    # noinspection PyTypeChecker
     """
     Evaluates the magnetic susceptibility derivative at the given point of the M(H) curve.
     The result is sensitive to the sign of the H change; the direction is defined as sign(dH).
     This implements the model described in "Jiles–Atherton Magnetic Hysteresis Parameters Identification", Pop et al.
 
-    >>> fun = lambda H, M, d: _dM_dH(COEF_COMSOL_JA_MATERIAL, H=H, M=M, direction=d)
+    >>> fun = lambda H, M, d: _dM_dH(**dataclasses.asdict(COEF_COMSOL_JA_MATERIAL), H=H, M=M, direction=d)
     >>> assert np.isclose(fun(0, 0, +1), fun(0, 0, -1))
     >>> assert np.isclose(fun(+1, 0, +1), fun(-1, 0, -1))
     >>> assert np.isclose(fun(-1, 0, +1), fun(+1, 0, -1))
     >>> assert np.isclose(fun(-1, 0.8e6, +1), fun(+1, -0.8e6, -1))
     >>> assert np.isclose(fun(+1, 0.8e6, +1), fun(-1, -0.8e6, -1))
     """
-    if direction not in (-1, +1):
-        raise ValueError(f"Invalid direction: {direction}")
-
-    H_e = H + coef.alpha * M
-    M_an = coef.M_s * _langevin(H_e / coef.a)
-    dM_an_dH_e = coef.M_s / coef.a * _dL_dx(H_e / coef.a)
-    dM_irr_dH = (M_an - M) / (coef.k_p * direction * (1 - coef.c_r) - coef.alpha * (M_an - M))
-    return (coef.c_r * dM_an_dH_e + (1 - coef.c_r) * dM_irr_dH) / (1 - coef.alpha * coef.c_r)
+    assert direction in (-1, +1)
+    H_e = H + alpha * M
+    M_an = M_s * _langevin(H_e / a)
+    dM_an_dH_e = M_s / a * _dL_dx(H_e / a)
+    dM_irr_dH = (M_an - M) / (k_p * direction * (1 - c_r) - alpha * (M_an - M))
+    return (c_r * dM_an_dH_e + (1 - c_r) * dM_irr_dH) / (1 - alpha * c_r)  # type: ignore
 
 
+@njit(nogil=True)
 def _langevin(x: float) -> float:
     """
     L(x) = coth(x) - 1/x
@@ -199,10 +211,11 @@ def _langevin(x: float) -> float:
     """
     if np.abs(x) < _EPSILON:  # For very small |x|, use the series expansion ~ x/3
         return x / 3.0
-    return float(1.0 / np.tanh(x) - 1.0 / x)
+    return 1.0 / np.tanh(x) - 1.0 / x  # type: ignore
 
 
 # noinspection PyPep8Naming
+@njit(nogil=True)
 def _dL_dx(x: float) -> float:
     """
     Derivative of Langevin L(x) = coth(x) - 1/x.
@@ -212,7 +225,7 @@ def _dL_dx(x: float) -> float:
         return 1.0 / 3.0
     # exact expression: -csch^2(x) + 1/x^2
     # csch^2(x) = 1 / sinh^2(x)
-    return float(-1.0 / (np.sinh(x) ** 2) + 1.0 / (x**2))
+    return -1.0 / (np.sinh(x) ** 2) + 1.0 / (x**2)  # type: ignore
 
 
 _logger = getLogger(__name__)

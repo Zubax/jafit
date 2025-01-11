@@ -8,37 +8,45 @@ from pathlib import Path
 import nox
 
 
+BYPRODUCTS = [
+    "*.egg-info",
+    "src/*.egg-info",
+    ".coverage*",
+    "html*",
+    ".*cache",
+    "__pycache__",
+    ".*compiled",
+    "*.log",
+    "*.tmp",
+    "*.png",
+]
+
 nox.options.error_on_external_run = True
 
 
 @nox.session(python=False)
 def clean(session):
-    for w in [
-        "*.egg-info",
-        ".coverage*",
-        "html*",
-        ".*cache",
-        "__pycache__",
-        ".*compiled",
-        "*.log",
-        "*.tmp",
-    ]:
+    for w in BYPRODUCTS:
         for f in Path.cwd().glob(w):
-            session.log(f"Removing: {f}")
-            if f.is_dir():
-                shutil.rmtree(f, ignore_errors=True)
-            else:
-                f.unlink(missing_ok=True)
+            try:
+                session.log(f"Removing: {f}")
+                if f.is_dir():
+                    shutil.rmtree(f, ignore_errors=True)
+                else:
+                    f.unlink(missing_ok=True)
+            except Exception as ex:
+                session.error(f"Failed to remove {f}: {ex}")
 
 
 @nox.session(reuse_venv=True)
 def test(session):
     session.install("-e", ".")
-    session.install("-r", "requirements.txt")
-
     session.install("pytest ~= 8.3", "mypy ~= 1.14", "coverage ~= 7.6")
-    session.run("coverage", "run", "jafit/jafit.py", "test-data/bh-lng37.tab")
-    session.run("coverage", "run", "-m", "pytest")
+
+    session.run("coverage", "run", "-m", "jafit", "data/bh-lng37.tab", "effort=100")
+    session.run("coverage", "run", "-m", "jafit", "c_r=0.07", "M_s=1578608", "a=29639", "k_p=96544", "alpha=0.046")
+
+    session.run("coverage", "run", "-m", "pytest", env={"NUMBA_DISABLE_JIT": "1"})
 
     session.run("coverage", "combine")
     session.run("coverage", "report", "--fail-under=25")

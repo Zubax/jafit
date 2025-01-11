@@ -2,8 +2,11 @@
   <dictionary name="pavel">
     <words>
       <w>coef</w>
+      <w>demag</w>
       <w>ferromagnetics</w>
+      <w>hysteretic</w>
       <w>jafit</w>
+      <w>njit</w>
     </words>
   </dictionary>
 </component>
