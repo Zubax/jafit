@@ -94,7 +94,7 @@ def solve(
     tolerance: float = 1e-3,
     saturation_susceptibility: float = 0.1,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
-    max_iter: int = 10**6,
+    max_iter: int = 10**7,
     no_ascent: bool = False,
 ) -> Solution:
     """
@@ -188,8 +188,9 @@ def _solve(
 
     dH_abs = 1e-3  # This is just a guess that will be dynamically refined.
     max_iter = hm_out.shape[0]
+    assert max_iter > 1
     assert np.isfinite(hm_out[0]).all()  # We require that the first point is already filled in.
-    while idx_out[0] < max_iter:
+    while idx_out[0] < (max_iter - 1):
         dH = direction * dH_abs
         H, M = hm_out[idx_out[0]]
 

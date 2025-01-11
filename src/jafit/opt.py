@@ -211,13 +211,14 @@ def make_objective_function(
         is_best = loss < best_loss
         best_loss = loss if is_best else best_loss
         (_logger.info if is_best else _logger.debug)(
-            "Solution #%s: %s loss=%.6f, H_stop_range=%s, tolerance=%f, elapsed=%.1fms",
+            "Solution #%s: %s loss=%.6f, H_stop_range=%s, tolerance=%f, elapsed=%.1fms, n_points=%s",
             epoch,
             c,
             loss,
             H_stop_range,
             tolerance,
             elapsed * 1e3,
+            len(sol.HMB_major_descending) if sol else None,
         )
         if is_best and cb_on_best is not None and sol:
             cb_on_best(epoch, loss, c, sol)
