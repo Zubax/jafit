@@ -33,8 +33,10 @@ jafit data/bh-lng37.tab
 Solve the JA equation with the given coefficients:
 
 ```shell
-jafit c_r=0.07 M_s=1578608 a=29639 k_p=96544 alpha=0.046
+jafit c_r=0.1 M_s=1e6 a=560 k_p=1200 alpha=0.0007
 ```
+
+Add `H_max=30e3` to manually limit the maximum H-field strength to 30 kA/m instead of relying on heuristics.
 
 ## Development
 

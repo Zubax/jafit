@@ -4,6 +4,7 @@ __pycache__/
 *.so
 *.tmp
 *.out
+*.lock
 .Python
 tmp/
 out/
