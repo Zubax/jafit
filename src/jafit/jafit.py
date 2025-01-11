@@ -130,6 +130,15 @@ def do_fit(
             cb_on_best=make_on_best_callback("local", bh_curve),
         ),
     )
+
+    # Emit a warning if the final coefficients are close to the bounds.
+    rtol, atol = 1e-6, 1e-9
+    # noinspection PyTypeChecker
+    for k, v in dataclasses.asdict(coef).items():
+        lo, hi = x_min.__getattribute__(k), x_max.__getattribute__(k)
+        if np.isclose(v, lo, rtol, atol) or np.isclose(v, hi, rtol, atol):
+            _logger.warning("Final %s=%.9f is close to the bounds [%.9f, %.9f]", k, v, lo, hi)
+
     return coef
 
 

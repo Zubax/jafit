@@ -88,7 +88,6 @@ class Solution:
     # Requires interpolation.
 
 
-# noinspection PyPep8Naming
 def solve(
     coef: Coef,
     *,
@@ -117,7 +116,6 @@ def solve(
     """
     c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
 
-    # noinspection PyPep8Naming
     def sweep_hmb(H: float, M: float, sign: int) -> npt.NDArray[np.float64]:
         assert sign in (-1, +1)
         hm: list[tuple[float, float]] = [(H, M)]  # Keep the initial point for completeness.
@@ -179,7 +177,6 @@ def solve(
     return Solution(HMB_virgin=hmb_virgin, HMB_major_descending=hmb_maj_dsc, HMB_major_ascending=hmb_maj_asc)
 
 
-# noinspection PyPep8Naming
 @njit(nogil=True)
 def _dM_dH(*, c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, direction: int) -> float:
     # noinspection PyTypeChecker
@@ -214,7 +211,6 @@ def _langevin(x: float) -> float:
     return 1.0 / np.tanh(x) - 1.0 / x  # type: ignore
 
 
-# noinspection PyPep8Naming
 @njit(nogil=True)
 def _dL_dx(x: float) -> float:
     """
