@@ -6,7 +6,10 @@ on:
 jobs:
   nox:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || contains(github.event.head_commit.message, '#test')
+    if: >
+      github.event_name == 'pull_request' ||
+      contains(github.event.head_commit.message, '#test') ||
+      github.ref == 'refs/heads/main'
     name: Nox
     steps:
     - uses: actions/checkout@v4
