@@ -23,11 +23,11 @@ class SolverError(RuntimeError):
     pass
 
 
-class ConvergenceFailureError(SolverError):
+class ConvergenceError(SolverError):
     pass
 
 
-class NumericalFailureError(SolverError):
+class NumericalError(SolverError):
     pass
 
 
@@ -130,7 +130,7 @@ def solve(
                 M_2 = M + 0.5 * (dM_dH_1 + dM_dH_2) * dH
             except (FloatingPointError, ZeroDivisionError) as ex:
                 if idx < 10:
-                    raise NumericalFailureError(f"Numerical failure @#{idx}, H={H:+.6f}, M={M:+.6f}") from ex
+                    raise NumericalError(f"Numerical failure @#{idx}, H={H:+.6f}, M={M:+.6f}") from ex
                 _logger.warning(
                     "Sweep stopped @#%s, H=%+.3f, M=%+.3f, dH=%+.6f due to numerical error: %s", idx, H, M, dH, ex
                 )
@@ -140,7 +140,7 @@ def solve(
             if np.abs(M_1 - M_2) > tolerance:
                 dH_abs /= 2
                 if dH_abs <= (_EPSILON * 100):
-                    raise ConvergenceFailureError(
+                    raise ConvergenceError(
                         "Step size too small: "
                         f"idx={idx}, H={H:+.6f}, M={M:+.6f}, dH={dH:.9f}, dM_dH_1={dM_dH_1:.9f}, dM_dH_2={dM_dH_2:.9f}"
                     )
@@ -178,7 +178,7 @@ def solve(
 
 
 @njit(nogil=True)
-def _dM_dH(*, c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, direction: int) -> float:
+def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, direction: int) -> float:
     # noinspection PyTypeChecker
     """
     Evaluates the magnetic susceptibility derivative at the given point of the M(H) curve.
