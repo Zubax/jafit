@@ -23,7 +23,7 @@ Install the package before using it:
 pip install .
 ```
 
-Derive parameters for a given BH curve (takes a long time) as shown below.
+Derive parameters for a given BH curve as shown below.
 Optionally, you can provide the initial guess for (some of) the coefficients like `c_r=0.07`, etc.
 Be sure to launch the tool from a dedicated directory because it may generate a lot of intermediate output files.
 All existing outputs in the current working directory are removed at startup.
