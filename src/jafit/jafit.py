@@ -187,7 +187,7 @@ def run(
         coef = ja.Coef(**ja_dict)  # type: ignore
 
     _logger.info("Solving and plotting: %s", coef)
-    sol = ja.solve(coef, tolerance=1e-4, H_stop_range=(50e3, H_max))
+    sol = ja.solve(coef, H_stop_range=(50e3, H_max))
     _logger.debug("Descending loop contains %s points", len(sol.HMB_major_descending))
     vis.plot(sol, f"{coef}{PLOT_FILE_SUFFIX}", bh_curve)
 

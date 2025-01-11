@@ -91,7 +91,7 @@ class Solution:
 def solve(
     coef: Coef,
     *,
-    tolerance: float = 1e-3,
+    tolerance: float = 1e-4,
     saturation_susceptibility: float = 0.1,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
     max_iter: int = 10**7,
@@ -114,6 +114,7 @@ def solve(
     representation without any special handling.
 
     Returns sample points for the H, M, and B fields in the order of their appearance.
+    If the sweep requires more than ```max_iter``` points, a SolverError will be raised.
     """
     c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
 
