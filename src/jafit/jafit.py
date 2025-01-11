@@ -88,7 +88,7 @@ def do_fit(
             obj_fn=opt.make_objective_function(
                 bh_curve,
                 opt.loss_demag_loop_key_points,
-                tolerance=3.0,  # This is a very rough approximation
+                tolerance=1.0,  # This is a very rough approximation
                 H_range_max=H_max,
                 stop_loss=1e-3,  # Fine adjustment is meaningless because the solver and the loss fun are crude here
                 stop_evals=max_evaluations_per_stage,
@@ -108,7 +108,7 @@ def do_fit(
             obj_fn=opt.make_objective_function(
                 bh_curve,
                 opt.loss_shape,
-                tolerance=1.0,  # High precision is not needed for the global search, but high speed is important.
+                tolerance=0.01,
                 H_range_max=H_max,
                 stop_evals=max_evaluations_per_stage,
                 cb_on_best=make_on_best_callback("global", bh_curve),
@@ -130,6 +130,15 @@ def do_fit(
             cb_on_best=make_on_best_callback("local", bh_curve),
         ),
     )
+
+    # Emit a warning if the final coefficients are close to the bounds.
+    rtol, atol = 1e-6, 1e-9
+    # noinspection PyTypeChecker
+    for k, v in dataclasses.asdict(coef).items():
+        lo, hi = x_min.__getattribute__(k), x_max.__getattribute__(k)
+        if np.isclose(v, lo, rtol, atol) or np.isclose(v, hi, rtol, atol):
+            _logger.warning("Final %s=%.9f is close to the bounds [%.9f, %.9f]", k, v, lo, hi)
+
     return coef
 
 
@@ -176,9 +185,16 @@ def run(
         if any(x is None for x in ja_dict.values()):
             raise ValueError(f"Supplied coefficients are incomplete, and optimization is not requested: {ja_dict}")
         coef = ja.Coef(**ja_dict)  # type: ignore
-        _logger.info("Solving and plotting: %s", coef)
-        sol = ja.solve(coef, tolerance=1e-4, H_stop_range=(coef.M_s * 0.5, H_max))
-        vis.plot(sol, f"{coef}{PLOT_FILE_SUFFIX}", bh_curve)
+
+    _logger.info("Solving and plotting: %s", coef)
+    sol = ja.solve(coef, tolerance=1e-4, H_stop_range=(50e3, H_max))
+    _logger.debug("Descending loop contains %s points", len(sol.HMB_major_descending))
+    vis.plot(sol, f"{coef}{PLOT_FILE_SUFFIX}", bh_curve)
+
+    H_c, B_r, BH_max = bh.extract_H_c_B_r_BH_max_from_major_descending_loop(
+        np.delete(sol.HMB_major_descending[::-1], 1, axis=1)
+    )
+    _logger.info("Predicted parameters: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", H_c, B_r, BH_max)
 
 
 def main() -> None:
