@@ -88,7 +88,7 @@ def do_fit(
             obj_fn=opt.make_objective_function(
                 bh_curve,
                 opt.loss_demag_loop_key_points,
-                tolerance=3.0,  # This is a very rough approximation
+                tolerance=1.0,  # This is a very rough approximation
                 H_range_max=H_max,
                 stop_loss=1e-3,  # Fine adjustment is meaningless because the solver and the loss fun are crude here
                 stop_evals=max_evaluations_per_stage,
@@ -108,7 +108,7 @@ def do_fit(
             obj_fn=opt.make_objective_function(
                 bh_curve,
                 opt.loss_shape,
-                tolerance=0.1,
+                tolerance=0.01,
                 H_range_max=H_max,
                 stop_evals=max_evaluations_per_stage,
                 cb_on_best=make_on_best_callback("global", bh_curve),
