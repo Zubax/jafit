@@ -209,10 +209,10 @@ def solve(
 
     major_loop = MajorLoop(descending=hmb_maj_dsc, ascending=hmb_maj_asc)
     if not asymmetric_material:
-        # The solver needs very fine stepping, but the output does not need such precision.
-        n = 10 ** round(np.log10(min(len(hmb_maj_dsc), len(hmb_maj_asc))) - 1)
-        n = max(n, 1e3)
-        major_loop = major_loop.balance(int(n))
+        # The original data has a much higher sample density near the places of high curvature.
+        # The resampled data will have a uniform sample density.
+        n = min(len(hmb_maj_dsc), len(hmb_maj_asc)) // 2
+        major_loop = major_loop.balance(n)
 
     return Solution(virgin=hmb_virgin, major_loop=major_loop)
 
