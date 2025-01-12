@@ -92,7 +92,7 @@ def solve(
     coef: Coef,
     *,
     tolerance: float = 1e-4,
-    saturation_susceptibility: float = 0.1,
+    saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
     max_iter: int = 10**7,
     no_ascent: bool = False,

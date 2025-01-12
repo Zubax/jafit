@@ -204,7 +204,13 @@ def run(
     _save_bh_curve(sol.HMB_major_ascending[:, (0, 2)], "major_ascending")
 
 
-def _save_bh_curve(hb: npt.NDArray[np.float64], file_name_root: str) -> None:
+def _save_bh_curve(hb: npt.NDArray[np.float64], file_name_root: str, num_points: int = 10**4) -> None:
+    if len(hb) > num_points * 2:
+        H, B = hb[:, 0], hb[:, 1]
+        assert np.all(np.diff(H) > 0)
+        H_resampled = np.linspace(H.min(), H.max(), num_points)
+        B_resampled = np.interp(H_resampled, H, B)
+        hb = np.column_stack((H_resampled, B_resampled))
     bh.save(Path(f"B(H).{file_name_root}{TAB_FILE_SUFFIX}"), hb)
 
 
