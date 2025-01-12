@@ -204,7 +204,7 @@ def run(
     _save_bh_curve(sol.HMB_major_ascending[:, (0, 2)], "major_ascending")
 
 
-def _save_bh_curve(hb: npt.NDArray[np.float64], file_name_root: str, num_points: int = 10**4) -> None:
+def _save_bh_curve(hb: npt.NDArray[np.float64], file_name_root: str, num_points: int = 5000) -> None:
     if len(hb) > num_points * 2:
         H, B = hb[:, 0], hb[:, 1]
         assert np.all(np.diff(H) > 0)
