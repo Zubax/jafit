@@ -43,7 +43,7 @@ def test(session):
     session.install("-e", ".")
     session.install("pytest ~= 8.3", "mypy ~= 1.14", "coverage ~= 7.6")
 
-    session.run("coverage", "run", "-m", "jafit", "data/bh-lng37.tab", "effort=100")
+    session.run("coverage", "run", "-m", "jafit", "data/bh-lng37-ansys.tab", "effort=100")
     session.run("coverage", "run", "-m", "jafit", "c_r=0.1", "M_s=1e6", "a=560", "k_p=1200", "alpha=0.0007")
 
     session.run("coverage", "run", "-m", "pytest", env={"NUMBA_DISABLE_JIT": "1"})

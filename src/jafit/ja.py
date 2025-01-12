@@ -73,18 +73,66 @@ Useful for testing and validation.
 
 
 @dataclasses.dataclass(frozen=True)
+class MajorLoop:
+    """
+    Each array contains n rows of 3 elements: H-field, M-field, and B-field, respectively.
+    The descending curve is sorted in descending order of the H-field; the ascending curve is the opposite.
+    """
+
+    descending: npt.NDArray[np.float64]
+    ascending: npt.NDArray[np.float64]
+
+    def balance(self, sample_points: int) -> MajorLoop:
+        """
+        Returns a new MajorLoop object where both curves are made symmetric around the origin.
+        This is intended to reduce the integration error when the curves are not perfectly symmetric.
+        The operation involves interpolating the curves on a regular lattice of H-field values.
+        """
+        H_lo = max(self.descending[:, 0].min(), self.ascending[:, 0].min())
+        H_hi = min(self.descending[:, 0].max(), self.ascending[:, 0].max())
+        H_amplitude = min(H_hi, -H_lo)
+        H = np.linspace(-H_amplitude, H_amplitude, sample_points)
+
+        def interpolate(curve: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+            assert np.all(np.diff(curve[:, 0]) > 0)
+            M = np.interp(H, curve[:, 0], curve[:, 1])
+            B = np.interp(H, curve[:, 0], curve[:, 2])
+            return np.column_stack((M, B))
+
+        dsc = interpolate(self.descending[::-1])
+        asc = interpolate(-self.ascending[::-1])
+        mean = 0.5 * (dsc + asc)
+        mean = np.column_stack((H, *mean.transpose()))[::-1]
+
+        return MajorLoop(descending=mean, ascending=-mean)
+
+    def __post_init__(self) -> None:
+        rows, cols = self.descending.shape
+        if cols != 3 or rows < 2:
+            raise ValueError("Descending curve out of shape")
+        rows, cols = self.ascending.shape
+        if cols != 3 or rows < 2:
+            raise ValueError("Ascending curve out of shape")
+        if not np.all(np.diff(self.descending[:, 0]) < 0):
+            raise ValueError("Descending curve is not sorted in descending order of the H-field")
+        if not np.all(np.diff(self.ascending[:, 0]) > 0):
+            raise ValueError("Ascending curve is not sorted in ascending order of the H-field")
+
+
+@dataclasses.dataclass(frozen=True)
 class Solution:
     """
     Each curve segment contains an nx3 matrix, where the columns are the applied field H, magnetization M,
     and flux density B, respectively; one row per sample point.
     """
 
-    HMB_virgin: npt.NDArray[np.float64]
-    HMB_major_descending: npt.NDArray[np.float64]
-    HMB_major_ascending: npt.NDArray[np.float64] | None = None
+    virgin: npt.NDArray[np.float64]
+    """
+    The virgin curve traced from H=0, M=0 to saturation in the positive direction.
+    Each row contains the H, M, and B values.
+    """
 
-    # TODO balancing: mirror the ascending curve around the origin and merge it with the descending curve
-    # Requires interpolation.
+    major_loop: MajorLoop
 
 
 def solve(
@@ -94,7 +142,7 @@ def solve(
     saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
     max_iter: int = 10**7,
-    no_ascent: bool = False,
+    no_balancing: bool = False,
 ) -> Solution:
     """
     Solves the JA model for the given coefficients and initial conditions by sweeping the magnetization in the
@@ -154,12 +202,17 @@ def solve(
     H_last, M_last, _ = hmb_virgin[-1]
     hmb_maj_dsc = sweep_hmb(H_last, M_last, -1)
 
-    hmb_maj_asc: npt.NDArray[np.float64] | None = None
-    if not no_ascent:
-        H_last, M_last, _ = hmb_maj_dsc[-1]
-        hmb_maj_asc = sweep_hmb(H_last, M_last, +1)
+    H_last, M_last, _ = hmb_maj_dsc[-1]
+    hmb_maj_asc = sweep_hmb(H_last, M_last, +1)
 
-    return Solution(HMB_virgin=hmb_virgin, HMB_major_descending=hmb_maj_dsc, HMB_major_ascending=hmb_maj_asc)
+    major_loop = MajorLoop(descending=hmb_maj_dsc, ascending=hmb_maj_asc)
+    if not no_balancing:
+        # The solver needs very fine stepping, but the output does not need such precision.
+        n = 10 ** round(np.log10(min(len(hmb_maj_dsc), len(hmb_maj_asc))) - 1)
+        n = max(n, 1e3)
+        major_loop = major_loop.balance(int(n))
+
+    return Solution(virgin=hmb_virgin, major_loop=major_loop)
 
 
 @njit(nogil=True)
@@ -229,7 +282,7 @@ def _solve(
 
 @njit(nogil=True)
 def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, direction: int) -> float:
-    # noinspection PyTypeChecker
+    # noinspection PyTypeChecker,PyShadowingNames
     """
     Evaluates the magnetic susceptibility derivative at the given point of the M(H) curve.
     The result is sensitive to the sign of the H change; the direction is defined as sign(dH).

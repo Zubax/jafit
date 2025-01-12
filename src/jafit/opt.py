@@ -29,7 +29,7 @@ def loss_demag_loop_key_points(bh_ref: npt.NDArray[np.float64], sol: ja.Solution
     This metric is only suitable for global optimization when no good priors are available.
     For fine-tuning, use other loss functions that consider the shape of the curve instead of just the key points.
     """
-    bh_sol = np.delete(sol.HMB_major_descending[::-1], 1, axis=1)  # Drop M values
+    bh_sol = np.delete(sol.major_loop.descending[::-1], 1, axis=1)  # Drop M values
     assert np.all(np.diff(bh_sol[:, 0]) > 0)
     if not bh_sol[0, 0] < 0 <= bh_sol[-1, 0]:
         _logger.info("Solution does not include H=0; assume infinite loss: %s", bh_sol[:, 0].tolist())
@@ -59,7 +59,7 @@ def loss_shape(bh_ref: npt.NDArray[np.float64], sol: ja.Solution) -> float:
     """
     bh_ref = np.copy(bh_ref)
     bh_ref[:, 1] /= ja.mu_0
-    bh_sol = np.delete(sol.HMB_major_descending, 1, axis=1)  # Drop M values
+    bh_sol = np.delete(sol.major_loop.descending, 1, axis=1)  # Drop M values
     bh_sol[:, 1] /= ja.mu_0
     return float(_rms_distance_points_to_polyline(bh_ref, bh_sol))
 
@@ -150,29 +150,6 @@ def _squared_distance_point_to_polyline(
     return dist_sq.min()  # type: ignore
 
 
-def loss_naive(bh_ref: npt.NDArray[np.float64], sol: ja.Solution) -> float:
-    """
-    Dissimilarity metric between the BH curve and the JA model prediction that compares B values for each H
-    in the reference curve through interpolation.
-    Provided for completeness.
-    """
-    bh_sol = np.delete(sol.HMB_major_descending[::-1], 1, axis=1)  # Drop M values
-    assert np.all(np.diff(bh_sol[:, 0]) > 0)
-    if not bh_sol[0, 0] < 0 <= bh_sol[-1, 0]:
-        _logger.info("Solution does not include H=0; assume infinite shape loss: %s", bh_sol[:, 0].tolist())
-        return np.inf
-
-    # Trim bh_ref such that it matches the range of H in bh_sol (usually this is a no-op).
-    bh_ref = bh_ref[(bh_ref[:, 0] >= bh_sol[0, 0]) & (bh_ref[:, 0] <= bh_sol[-1, 0])]
-    assert bh_ref[0, 0] >= bh_sol[0, 0] and bh_ref[-1, 0] <= bh_sol[-1, 0]
-
-    # Interpolate the solution to match the reference curve and calculate the loss.
-    # TODO: this is not enough; both should be interpolated and resampled on a regular fine lattice;
-    # otherwise, the loss is mainly driven by the regions with high sample density.
-    bh_sol_interp = np.interp(bh_ref[:, 0], bh_sol[:, 0], bh_sol[:, 1])
-    return float(np.mean(np.abs(bh_ref[:, 1] - bh_sol_interp)))
-
-
 @dataclasses.dataclass(frozen=True)
 class ObjectiveFunctionResult:
     loss: float
@@ -202,7 +179,7 @@ def make_objective_function(
         sol: ja.Solution | None = None
         started_at = time.monotonic()
         try:
-            sol = ja.solve(c, tolerance=tolerance, H_stop_range=H_stop_range, no_ascent=True)
+            sol = ja.solve(c, tolerance=tolerance, H_stop_range=H_stop_range)
             loss = loss_fun(bh_ref, sol)
         except ja.SolverError as ex:
             _logger.debug("Solver error: %s: %s", type(ex).__name__, ex)
@@ -211,14 +188,13 @@ def make_objective_function(
         is_best = loss < best_loss
         best_loss = loss if is_best else best_loss
         (_logger.info if is_best else _logger.debug)(
-            "Solution #%s: %s loss=%.6f, H_stop_range=%s, tolerance=%f, elapsed=%.1fms, n_points=%s",
+            "Solution #%s: %s loss=%.6f, H_stop_range=%s, tolerance=%f, elapsed=%.1fms",
             epoch,
             c,
             loss,
             H_stop_range,
             tolerance,
             elapsed * 1e3,
-            len(sol.HMB_major_descending) if sol else None,
         )
         if is_best and cb_on_best is not None and sol:
             cb_on_best(epoch, loss, c, sol)

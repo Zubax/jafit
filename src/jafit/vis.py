@@ -9,11 +9,13 @@ matplotlib.use("Agg")  # Choose the noninteractive backend; this has to be done 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
-from . import ja
+mu_0 = 1.2566370614359173e-6  # Vacuum permeability [henry/meter]
 
 
 def plot(
-    sol: ja.Solution,
+    virgin: npt.NDArray[np.float64],
+    major_descending: npt.NDArray[np.float64],
+    major_ascending: npt.NDArray[np.float64],
     output_file_name: str,
     bh_curve_ref: npt.NDArray[np.float64] | None = None,
     max_points: float = 1e4,
@@ -27,14 +29,13 @@ def plot(
                 indices = np.round(np.linspace(0, n_points - 1, int(max_points))).astype(int)
                 fragment = fragment[indices, :]
             H_vals, M_vals, B_vals = fragment[:, 0], fragment[:, 1], fragment[:, 2]
-            J_vals = M_vals * ja.mu_0
+            J_vals = M_vals * mu_0
             ax_b.plot(H_vals, J_vals, label=f"{prefix} polarization J")
             ax_b.plot(H_vals, B_vals, label=f"{prefix} flux density B")
 
-        plot_hmb(sol.HMB_virgin, "Virgin")
-        plot_hmb(sol.HMB_major_descending, "Major descending")
-        if sol.HMB_major_ascending is not None:
-            plot_hmb(sol.HMB_major_ascending, "Major ascending")
+        plot_hmb(virgin, "Virgin")
+        plot_hmb(major_descending, "Major descending")
+        plot_hmb(major_ascending, "Major ascending")
 
         # Plot the reference BH curve
         if bh_curve_ref is not None:
