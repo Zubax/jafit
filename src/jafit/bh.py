@@ -52,4 +52,10 @@ def load(file_path: Path) -> npt.NDArray[np.float64]:
     return bh_data
 
 
+def save(file_path: Path, hb: npt.NDArray[np.float64]) -> None:
+    if not np.all(np.diff(hb[:, 0]) > 0):
+        raise ValueError("Bad BH curve: H is not monotonically increasing")
+    file_path.write_text("H [ampere/meter]\tB [tesla]\n" + "\n".join(f"{h:+015.6f}\t{b:+012.9f}" for h, b in hb))
+
+
 _logger = getLogger(__name__)

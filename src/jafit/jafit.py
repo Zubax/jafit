@@ -20,6 +20,7 @@ from . import ja, bh, opt, vis
 
 
 PLOT_FILE_SUFFIX = ".jafit.png"
+TAB_FILE_SUFFIX = ".jafit.tab"
 
 BG_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 """We only need one worker."""
@@ -186,15 +187,25 @@ def run(
             raise ValueError(f"Supplied coefficients are incomplete, and optimization is not requested: {ja_dict}")
         coef = ja.Coef(**ja_dict)  # type: ignore
 
+    # Solve with the coefficients and plot the results.
     _logger.info("Solving and plotting: %s", coef)
     sol = ja.solve(coef, H_stop_range=(min(50e3, H_max), H_max))
     _logger.debug("Descending loop contains %s points", len(sol.HMB_major_descending))
     vis.plot(sol, f"{coef}{PLOT_FILE_SUFFIX}", bh_curve)
 
-    H_c, B_r, BH_max = bh.extract_H_c_B_r_BH_max_from_major_descending_loop(
-        np.delete(sol.HMB_major_descending[::-1], 1, axis=1)
-    )
+    # Extract the key parameters from the descending loop.
+    H_c, B_r, BH_max = bh.extract_H_c_B_r_BH_max_from_major_descending_loop(sol.HMB_major_descending[::-1][:, (0, 2)])
     _logger.info("Predicted parameters: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", H_c, B_r, BH_max)
+
+    # Save the BH curves.
+    _save_bh_curve(sol.HMB_virgin[:, (0, 2)], "virgin")
+    _save_bh_curve(sol.HMB_major_descending[::-1][:, (0, 2)], "major_descending")
+    assert sol.HMB_major_ascending is not None
+    _save_bh_curve(sol.HMB_major_ascending[:, (0, 2)], "major_ascending")
+
+
+def _save_bh_curve(hb: npt.NDArray[np.float64], file_name_root: str) -> None:
+    bh.save(Path(f"B(H).{file_name_root}{TAB_FILE_SUFFIX}"), hb)
 
 
 def main() -> None:
@@ -263,6 +274,8 @@ def _setup_logging() -> None:
 
 def _cleanup() -> None:
     for f in Path.cwd().glob(f"*{PLOT_FILE_SUFFIX}"):
+        f.unlink(missing_ok=True)
+    for f in Path.cwd().glob(f"*{TAB_FILE_SUFFIX}"):
         f.unlink(missing_ok=True)
 
 
