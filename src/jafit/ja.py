@@ -142,7 +142,7 @@ def solve(
     saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
     max_iter: int = 10**7,
-    no_balancing: bool = False,
+    asymmetric_material: bool = False,
 ) -> Solution:
     """
     Solves the JA model for the given coefficients and initial conditions by sweeping the magnetization in the
@@ -154,7 +154,9 @@ def solve(
     The sweeps will stop when either the magnetic susceptibility drops below the specified threshold (which indicates
     that the material is saturated) or when the applied field magnitude exceeds ```H_stop_range[1]```.
     The saturation will not be detected unless the H-field magnitude is at least ```H_stop_range[0]```;
-    this is done to handle certain materials that exhibit very low susceptibility at weak fields.
+    this is done to handle materials that exhibit very low susceptibility at weak fields.
+
+    If asymmetric_material is set to True, the solver will not attempt to balance the major loops.
 
     The solver will stop the sweep early if a floating point error is raised.
     This can be paired with ``np.seterr(over="raise")`` to simply utilize the maximum range of the floating point
@@ -206,7 +208,7 @@ def solve(
     hmb_maj_asc = sweep_hmb(H_last, M_last, +1)
 
     major_loop = MajorLoop(descending=hmb_maj_dsc, ascending=hmb_maj_asc)
-    if not no_balancing:
+    if not asymmetric_material:
         # The solver needs very fine stepping, but the output does not need such precision.
         n = 10 ** round(np.log10(min(len(hmb_maj_dsc), len(hmb_maj_asc))) - 1)
         n = max(n, 1e3)
