@@ -6,7 +6,6 @@ For the definition of the model, see the enclosed PDF with the relevant excerpt 
 """
 
 from __future__ import annotations
-import itertools
 from logging import getLogger
 import dataclasses
 import numpy as np

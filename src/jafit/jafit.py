@@ -20,7 +20,7 @@ from . import ja, bh, opt, vis
 
 
 PLOT_FILE_SUFFIX = ".jafit.png"
-TAB_FILE_SUFFIX = ".jafit.tab"
+CURVE_FILE_SUFFIX = ".jafit.tab"
 
 BG_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 """We only need one worker."""
@@ -211,7 +211,7 @@ def _save_bh_curve(hb: npt.NDArray[np.float64], file_name_root: str, num_points:
         H_resampled = np.linspace(H.min(), H.max(), num_points)
         B_resampled = np.interp(H_resampled, H, B)
         hb = np.column_stack((H_resampled, B_resampled))
-    bh.save(Path(f"B(H).{file_name_root}{TAB_FILE_SUFFIX}"), hb)
+    bh.save(Path(f"B(H).{file_name_root}{CURVE_FILE_SUFFIX}"), hb)
 
 
 def main() -> None:
@@ -281,7 +281,7 @@ def _setup_logging() -> None:
 def _cleanup() -> None:
     for f in Path.cwd().glob(f"*{PLOT_FILE_SUFFIX}"):
         f.unlink(missing_ok=True)
-    for f in Path.cwd().glob(f"*{TAB_FILE_SUFFIX}"):
+    for f in Path.cwd().glob(f"*{CURVE_FILE_SUFFIX}"):
         f.unlink(missing_ok=True)
 
 

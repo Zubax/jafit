@@ -3,6 +3,8 @@ __pycache__/
 *$py.class
 *.so
 *.tmp
+*.tsv
+*.tab
 *.out
 *.lock
 .Python
