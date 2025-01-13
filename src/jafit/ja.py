@@ -65,7 +65,7 @@ class Coef:
             raise ValueError(f"alpha invalid: {self.alpha}")
 
 
-COEF_COMSOL_JA_MATERIAL = Coef(c_r=0.1, M_s=1e6, a=560, k_p=1200, alpha=0.0007)
+COEF_COMSOL_JA_MATERIAL = Coef(c_r=0.1, M_s=1.6e6, a=560, k_p=1200, alpha=0.0007)
 """
 Values are taken from the material properties named "Jiles-Atherton Hysteretic Material" in COMSOL Multiphysics.
 Useful for testing and validation.
