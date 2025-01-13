@@ -51,7 +51,7 @@ Then you can use `flameprof` to visualize the collected data.
 
 There is a COMSOL model in the `validation` directory that contains a bored steel cylinder with a copper wire passing along its axis. The wire carries a 1 Hz magnetizing current whose amplitude is chosen to be just high enough to push the cylinder material into saturation, while the frequency is chosen to be low to avoid eddy currents. The setup is used to obtain the BH curve and ascertain that it matches the predictions made by the tool.
 
-<img src="validation/B(t).gif" alt="">
+<img src="validation/B(t).gif" width="600px" alt="">
 
 To make the prediction, run the tool specifying the JA model coefficients copied from the material properties assigned to the cylinder in the COMSOL model:
 
