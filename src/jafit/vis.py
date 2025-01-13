@@ -1,6 +1,7 @@
 # Copyright (C) 2025 Pavel Kirienko <pavel.kirienko@zubax.com>
 
 from logging import getLogger
+import dataclasses
 import numpy as np
 import numpy.typing as npt
 import matplotlib
@@ -16,6 +17,7 @@ def plot(
     virgin: npt.NDArray[np.float64],
     major_descending: npt.NDArray[np.float64],
     major_ascending: npt.NDArray[np.float64],
+    title: str,
     output_file_name: str,
     bh_curve_ref: npt.NDArray[np.float64] | None = None,
     max_points: float = 1e4,
@@ -42,7 +44,7 @@ def plot(
             ax_b.scatter(bh_curve_ref[:, 0], bh_curve_ref[:, 1], marker=".", label="Reference BH curve")
 
         # Configure B(H)|J(H) subplot
-        ax_b.set_title("Flux density and polarization vs. external field")
+        ax_b.set_title(title)
         ax_b.set_xlabel("H [ampere/meter]")
         ax_b.set_ylabel("B|J [tesla]")
         ax_b.legend()

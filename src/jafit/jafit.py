@@ -35,7 +35,7 @@ def make_on_best_callback(
     def cb(epoch: int, loss: float, coef: ja.Coef, sol: ja.Solution) -> None:
         def bg() -> None:
             plot_file = f"{file_name_prefix}_#{epoch:05}_{loss:.6f}_{coef}{PLOT_FILE_SUFFIX}"
-            vis.plot(sol.virgin, sol.major_loop.descending, sol.major_loop.ascending, plot_file, bh_ref)
+            vis.plot(sol.virgin, sol.major_loop.descending, sol.major_loop.ascending, str(coef), plot_file, bh_ref)
 
         # Plotting can take a while, so we do it in a background thread.
         # We do release the GIL in the solver very often, so this is not a problem.
@@ -191,11 +191,22 @@ def run(
     _logger.info("Solving and plotting: %s", coef)
     sol = ja.solve(coef, H_stop_range=(min(50e3, H_max), H_max))
     _logger.debug("Descending loop contains %s points", len(sol.major_loop.descending))
-    vis.plot(sol.virgin, sol.major_loop.descending, sol.major_loop.ascending, f"{coef}{PLOT_FILE_SUFFIX}", bh_curve)
 
     # Extract the key parameters from the descending loop.
     H_c, B_r, BH_max = bh.extract_H_c_B_r_BH_max_from_major_descending_loop(sol.major_loop.descending[::-1][:, (0, 2)])
     _logger.info("Predicted parameters: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", H_c, B_r, BH_max)
+
+    # noinspection PyTypeChecker
+    title = f"c_r={coef.c_r:.10f} M_s={coef.M_s:.6f} a={coef.a:.6f} k_p={coef.k_p:.6f} alpha={coef.alpha:.10f}"
+    title += f"\nH_c={H_c:.0f} B_r={B_r:.3f} BH_max={BH_max:.0f}"
+    vis.plot(
+        sol.virgin,
+        sol.major_loop.descending,
+        sol.major_loop.ascending,
+        title,
+        f"{title.replace('\n',' ')}{PLOT_FILE_SUFFIX}",
+        bh_curve,
+    )
 
     # Save the BH curves.
     _save_bh_curve(sol.virgin[:, (0, 2)], "virgin")
