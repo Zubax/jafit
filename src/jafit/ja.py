@@ -7,6 +7,7 @@ For the definition of the model, see the enclosed PDF with the relevant excerpt 
 
 from __future__ import annotations
 from logging import getLogger
+from typing import Any
 import time
 import dataclasses
 import numpy as np
@@ -77,7 +78,7 @@ Useful for testing and validation.
 class MajorLoop:
     """
     Each array contains n rows of 3 elements: H-field, M-field, and B-field, respectively.
-    The descending curve is sorted in descending order of the H-field; the ascending curve is the opposite.
+    All curves are sorted in ascending order of the H-field.
     """
 
     descending: npt.NDArray[np.float64]
@@ -90,22 +91,7 @@ class MajorLoop:
         """
         started_at = time.monotonic()
 
-        # Ensure the final range is covered by both curves; otherwise, interpolation will not be possible.
-        H_lo = max(self.descending[:, 0].min(), self.ascending[:, 0].min())
-        H_hi = min(self.descending[:, 0].max(), self.ascending[:, 0].max())
-
-        # Truncate both curves such that they have the same range.
-        dsc = self.descending[(self.descending[:, 0] >= H_lo) & (self.descending[:, 0] <= H_hi)]
-        asc = self.ascending[(self.ascending[:, 0] >= H_lo) & (self.ascending[:, 0] <= H_hi)]
-
-        # Merge all H values from both curves and sort them in ascending order, removing values too close together.
-        H = np.unique(np.concatenate((dsc[:, 0], asc[:, 0])))
-        H = H[np.concatenate(([True], np.diff(H) > _EPSILON))]
-        assert np.all(np.diff(H) > 0)
-        assert H.min() >= H_lo and H.max() <= H_hi
-        assert len(H) > len(dsc) and len(H) > len(asc)
-
-        # Reorder the curves such that they are both in the H-ascending order and have the same polarity.
+        # Prepare the curves such that they are both in the H-ascending order and have the same polarity.
         # There is one caveat: the sample density may vary in the beginning and at the end of the curves
         # due to the automatic step width adjustment in the ODE solver.
         # If the starting step size is small, the curve may have a higher density at the beginning than at the end.
@@ -113,10 +99,22 @@ class MajorLoop:
         # After one of the curves is mirrored around the origin, they both will have a greater number of samples on
         # one side, which causes the mean curve to be heavily disbalanced as well.
         # This is something to be aware of, but it is probably not a problem in itself.
-        dsc = dsc[::-1]  # Reorder in the H-ascending order.
-        asc = -asc[::-1]  # Mirror around the origin and keep the H-ascending order.
-        assert np.all(np.diff(dsc[:, 0]) > 0)
-        assert np.all(np.diff(asc[:, 0]) > 0)
+        dsc = self.descending
+        asc = -self.ascending[::-1]  # Mirror around the origin and keep the H-ascending order.
+        assert dsc[0, 0] < dsc[-1, 0] and asc[0, 0] < asc[-1, 0]
+
+        # Ensure the final range is covered by both curves; otherwise, interpolation will not be possible.
+        H_lo = max(float(dsc[0, 0]), float(asc[0, 0]))
+        H_hi = min(float(dsc[-1, 0]), float(asc[-1, 0]))
+        assert H_lo < H_hi
+
+        # Merge all H values from both curves and sort them in the ascending order, removing values too close together.
+        H = np.concatenate((dsc[:, 0], asc[:, 0]))
+        H = np.unique(H[(H >= H_lo) & (H <= H_hi)])
+        H = H[np.concatenate(([True], np.diff(H) > _EPSILON))]
+        assert np.all(np.diff(H) > 0)
+        assert H.min() >= H_lo and H.max() <= H_hi
+        assert len(H) > len(dsc) and len(H) > len(asc)
 
         # Interpolate both curves at the new H values.
         dsc = np.column_stack(
@@ -132,19 +130,17 @@ class MajorLoop:
             )
         )
 
-        # Compute the mean curve and reorder it to the descending order of the H-field.
+        # Compute the mean curve.
         mean = 0.5 * (dsc + asc)
-        mean = np.column_stack((H, *mean.transpose()))[::-1]
+        mean = np.column_stack((H, *mean.transpose()))
+        mean.setflags(write=False)
 
         # Log diagnostics, as this is a critical operation.
         # noinspection PyTypeChecker
-        def curve_stats(
-            m: npt.NDArray[np.float64],
-        ) -> tuple[int, float, float, float, float, float, float, float, float]:
+        def curve_stats(m: npt.NDArray[np.float64]) -> tuple[Any, ...]:
             # noinspection PyTypeChecker
             def lim(i: int) -> tuple[float, float]:
-                ab = m[0, i], m[-1, i]
-                return ab if ab[0] < ab[1] else ab[::-1]
+                return m[0, i], m[-1, i]
 
             return len(m), *lim(0), *lim(1), *lim(2)
 
@@ -153,7 +149,7 @@ class MajorLoop:
             "desc: %7d pts H[%+012.3f,%+012.3f] M[%+012.3f,%+012.3f] B[%+012.9f,%+012.9f]\n"
             "asc:  %7d pts H[%+012.3f,%+012.3f] M[%+012.3f,%+012.3f] B[%+012.9f,%+012.9f]\n"
             "mean: %7d pts H[%+012.3f,%+012.3f] M[%+012.3f,%+012.3f] B[%+012.9f,%+012.9f]\n"
-            "removed %d close points; elapsed %.0f ms",
+            "removed %d points; elapsed %.0f ms",
             *curve_stats(self.descending),
             *curve_stats(self.ascending),
             *curve_stats(mean),
@@ -161,7 +157,7 @@ class MajorLoop:
             (time.monotonic() - started_at) * 1e3,
         )
 
-        return MajorLoop(descending=mean, ascending=-mean)
+        return MajorLoop(descending=mean, ascending=-mean[::-1])
 
     def __post_init__(self) -> None:
         rows, cols = self.descending.shape
@@ -170,8 +166,8 @@ class MajorLoop:
         rows, cols = self.ascending.shape
         if cols != 3 or rows < 2:
             raise ValueError("Ascending curve out of shape")
-        if not np.all(np.diff(self.descending[:, 0]) < 0):
-            raise ValueError("Descending curve is not sorted in descending order of the H-field")
+        if not np.all(np.diff(self.descending[:, 0]) > 0):
+            raise ValueError("Descending curve is not sorted in ascending order of the H-field")
         if not np.all(np.diff(self.ascending[:, 0]) > 0):
             raise ValueError("Ascending curve is not sorted in ascending order of the H-field")
 
@@ -264,7 +260,7 @@ def solve(
     H_last, M_last, _ = hmb_maj_dsc[-1]
     hmb_maj_asc = sweep_hmb(H_last, M_last, +1)
 
-    major_loop = MajorLoop(descending=hmb_maj_dsc, ascending=hmb_maj_asc)
+    major_loop = MajorLoop(descending=hmb_maj_dsc[::-1], ascending=hmb_maj_asc)
     if not asymmetric_material:
         major_loop = major_loop.balance()
 

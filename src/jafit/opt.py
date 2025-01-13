@@ -29,7 +29,7 @@ def loss_demag_loop_key_points(bh_ref: npt.NDArray[np.float64], sol: ja.Solution
     This metric is only suitable for global optimization when no good priors are available.
     For fine-tuning, use other loss functions that consider the shape of the curve instead of just the key points.
     """
-    bh_sol = np.delete(sol.major_loop.descending[::-1], 1, axis=1)  # Drop M values
+    bh_sol = np.delete(sol.major_loop.descending, 1, axis=1)  # Drop M values
     assert np.all(np.diff(bh_sol[:, 0]) > 0)
     if not bh_sol[0, 0] < 0 <= bh_sol[-1, 0]:
         _logger.info("Solution does not include H=0; assume infinite loss: %s", bh_sol[:, 0].tolist())

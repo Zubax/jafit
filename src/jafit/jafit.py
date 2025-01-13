@@ -193,7 +193,7 @@ def run(
     _logger.debug("Descending loop contains %s points", len(sol.major_loop.descending))
 
     # Extract the key parameters from the descending loop.
-    H_c, B_r, BH_max = bh.extract_H_c_B_r_BH_max_from_major_descending_loop(sol.major_loop.descending[::-1][:, (0, 2)])
+    H_c, B_r, BH_max = bh.extract_H_c_B_r_BH_max_from_major_descending_loop(sol.major_loop.descending[:, (0, 2)])
     _logger.info("Predicted parameters: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", H_c, B_r, BH_max)
 
     # noinspection PyTypeChecker
@@ -210,7 +210,7 @@ def run(
 
     # Save the BH curves.
     _save_bh_curve(sol.virgin[:, (0, 2)], "virgin")
-    _save_bh_curve(sol.major_loop.descending[::-1][:, (0, 2)], "major_descending")
+    _save_bh_curve(sol.major_loop.descending[:, (0, 2)], "major_descending")
     _save_bh_curve(sol.major_loop.ascending[:, (0, 2)], "major_ascending")
 
 
