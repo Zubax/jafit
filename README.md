@@ -46,3 +46,20 @@ If you want to run PyTest only, you may want to `export NUMBA_DISABLE_JIT=1` bef
 
 To profile, go like: `python3 -m cProfile -o out.prof -m jafit ../data/bh-lng37.tab`.
 Then you can use `flameprof` to visualize the collected data.
+
+## Validation
+
+There is a COMSOL model in the `validation` directory that contains a bored steel cylinder with a copper wire passing along its axis. The wire carries a 1 Hz magnetizing current whose amplitude is chosen to be just high enough to push the cylinder material into saturation, while the frequency is chosen to be low to avoid eddy currents. The setup is used to obtain the BH curve and ascertain that it matches the predictions made by the tool.
+
+<img src="validation/B(t).gif" width="600px" alt="">
+
+To make the prediction, run the tool specifying the JA model coefficients copied from the material properties assigned to the cylinder in the COMSOL model:
+
+
+```shell
+jafit c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
+```
+
+Note the predicted $H_c$, $B_r$, and $BH_\text{max}$ and compare them against the values seen in the COMSOL model.
+
+<img src="validation/H(t),M(t),B(t).png" width="400px" alt=""><img src="validation/hysteresis.png" width="400px" alt="">
