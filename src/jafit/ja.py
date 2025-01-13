@@ -7,6 +7,7 @@ For the definition of the model, see the enclosed PDF with the relevant excerpt 
 
 from __future__ import annotations
 from logging import getLogger
+import time
 import dataclasses
 import numpy as np
 import numpy.typing as npt
@@ -82,27 +83,83 @@ class MajorLoop:
     descending: npt.NDArray[np.float64]
     ascending: npt.NDArray[np.float64]
 
-    def balance(self, sample_points: int) -> MajorLoop:
+    def balance(self) -> MajorLoop:
         """
         Returns a new MajorLoop object where both curves are made symmetric around the origin.
         This is intended to reduce the integration error when the curves are not perfectly symmetric.
-        The operation involves interpolating the curves on a regular lattice of H-field values.
         """
+        started_at = time.monotonic()
+
+        # Ensure the final range is covered by both curves; otherwise, interpolation will not be possible.
         H_lo = max(self.descending[:, 0].min(), self.ascending[:, 0].min())
         H_hi = min(self.descending[:, 0].max(), self.ascending[:, 0].max())
-        H_amplitude = min(H_hi, -H_lo)
-        H = np.linspace(-H_amplitude, H_amplitude, sample_points)
 
-        def interpolate(curve: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
-            assert np.all(np.diff(curve[:, 0]) > 0)
-            M = np.interp(H, curve[:, 0], curve[:, 1])
-            B = np.interp(H, curve[:, 0], curve[:, 2])
-            return np.column_stack((M, B))
+        # Truncate both curves such that they have the same range.
+        dsc = self.descending[(self.descending[:, 0] >= H_lo) & (self.descending[:, 0] <= H_hi)]
+        asc = self.ascending[(self.ascending[:, 0] >= H_lo) & (self.ascending[:, 0] <= H_hi)]
 
-        dsc = interpolate(self.descending[::-1])
-        asc = interpolate(-self.ascending[::-1])
+        # Merge all H values from both curves and sort them in ascending order, removing values too close together.
+        H = np.unique(np.concatenate((dsc[:, 0], asc[:, 0])))
+        H = H[np.concatenate(([True], np.diff(H) > _EPSILON))]
+        assert np.all(np.diff(H) > 0)
+        assert H.min() >= H_lo and H.max() <= H_hi
+        assert len(H) > len(dsc) and len(H) > len(asc)
+
+        # Reorder the curves such that they are both in the H-ascending order and have the same polarity.
+        # There is one caveat: the sample density may vary in the beginning and at the end of the curves
+        # due to the automatic step width adjustment in the ODE solver.
+        # If the starting step size is small, the curve may have a higher density at the beginning than at the end.
+        # The descending curve will have a higher sample density in the upper-right part of the plot, and vice versa.
+        # After one of the curves is mirrored around the origin, they both will have a greater number of samples on
+        # one side, which causes the mean curve to be heavily disbalanced as well.
+        # This is something to be aware of, but it is probably not a problem in itself.
+        dsc = dsc[::-1]  # Reorder in the H-ascending order.
+        asc = -asc[::-1]  # Mirror around the origin and keep the H-ascending order.
+        assert np.all(np.diff(dsc[:, 0]) > 0)
+        assert np.all(np.diff(asc[:, 0]) > 0)
+
+        # Interpolate both curves at the new H values.
+        dsc = np.column_stack(
+            (
+                np.interp(H, dsc[:, 0], dsc[:, 1]),
+                np.interp(H, dsc[:, 0], dsc[:, 2]),
+            )
+        )
+        asc = np.column_stack(
+            (
+                np.interp(H, asc[:, 0], asc[:, 1]),
+                np.interp(H, asc[:, 0], asc[:, 2]),
+            )
+        )
+
+        # Compute the mean curve and reorder it to the descending order of the H-field.
         mean = 0.5 * (dsc + asc)
         mean = np.column_stack((H, *mean.transpose()))[::-1]
+
+        # Log diagnostics, as this is a critical operation.
+        # noinspection PyTypeChecker
+        def curve_stats(
+            m: npt.NDArray[np.float64],
+        ) -> tuple[int, float, float, float, float, float, float, float, float]:
+            # noinspection PyTypeChecker
+            def lim(i: int) -> tuple[float, float]:
+                ab = m[0, i], m[-1, i]
+                return ab if ab[0] < ab[1] else ab[::-1]
+
+            return len(m), *lim(0), *lim(1), *lim(2)
+
+        _logger.debug(
+            "Major loop: Balancing result:\n"
+            "desc: %7d pts H[%+012.3f,%+012.3f] M[%+012.3f,%+012.3f] B[%+012.9f,%+012.9f]\n"
+            "asc:  %7d pts H[%+012.3f,%+012.3f] M[%+012.3f,%+012.3f] B[%+012.9f,%+012.9f]\n"
+            "mean: %7d pts H[%+012.3f,%+012.3f] M[%+012.3f,%+012.3f] B[%+012.9f,%+012.9f]\n"
+            "removed %d close points; elapsed %.0f ms",
+            *curve_stats(self.descending),
+            *curve_stats(self.ascending),
+            *curve_stats(mean),
+            len(self.descending) + len(self.ascending) - len(mean),
+            (time.monotonic() - started_at) * 1e3,
+        )
 
         return MajorLoop(descending=mean, ascending=-mean)
 
@@ -209,10 +266,7 @@ def solve(
 
     major_loop = MajorLoop(descending=hmb_maj_dsc, ascending=hmb_maj_asc)
     if not asymmetric_material:
-        # The original data has a much higher sample density near the places of high curvature.
-        # The resampled data will have a uniform sample density.
-        n = min(len(hmb_maj_dsc), len(hmb_maj_asc)) // 2
-        major_loop = major_loop.balance(n)
+        major_loop = major_loop.balance()
 
     return Solution(virgin=hmb_virgin, major_loop=major_loop)
 
@@ -241,7 +295,7 @@ def _solve(
     assert idx_out.shape == (1,)
     assert idx_out[0] == 0
 
-    dH_abs = 1e-3  # This is just a guess that will be dynamically refined.
+    dH_abs = 0.01  # This is just a guess that will be dynamically refined.
     max_iter = hm_out.shape[0]
     assert max_iter > 1
     assert np.isfinite(hm_out[0]).all()  # We require that the first point is already filled in.

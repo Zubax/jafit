@@ -55,7 +55,6 @@ There is a COMSOL model in the `validation` directory that contains a bored stee
 
 To make the prediction, run the tool specifying the JA model coefficients copied from the material properties assigned to the cylinder in the COMSOL model:
 
-
 ```shell
 jafit c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 ```

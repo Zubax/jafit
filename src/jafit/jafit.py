@@ -182,7 +182,7 @@ def run(
         # noinspection PyTypeChecker
         print(*(f"{k}={v}" for k, v in dataclasses.asdict(coef).items()))
     else:
-        _logger.info("Fitting will not be performed")
+        _logger.info("No BH curve given, fitting will not be performed")
         if any(x is None for x in ja_dict.values()):
             raise ValueError(f"Supplied coefficients are incomplete, and optimization is not requested: {ja_dict}")
         coef = ja.Coef(**ja_dict)  # type: ignore
