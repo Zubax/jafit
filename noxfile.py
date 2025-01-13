@@ -25,7 +25,7 @@ nox.options.error_on_external_run = True
 
 
 @nox.session(python=False)
-def clean(session):
+def clean(session: nox.Session) -> None:
     for w in BYPRODUCTS:
         for f in Path.cwd().glob(w):
             try:
@@ -39,7 +39,7 @@ def clean(session):
 
 
 @nox.session(reuse_venv=True)
-def test(session):
+def test(session: nox.Session) -> None:
     session.install("-e", ".")
     session.install("pytest ~= 8.3", "mypy ~= 1.14", "coverage ~= 7.6")
 
@@ -60,6 +60,6 @@ def test(session):
 
 
 @nox.session(reuse_venv=True)
-def black(session):
+def black(session: nox.Session) -> None:
     session.install("black ~= 24.10")
     session.run("black", "--check", ".")
