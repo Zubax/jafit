@@ -229,7 +229,8 @@ def run(
     # noinspection PyTypeChecker
     title = f"c_r={coef.c_r:.10f} M_s={coef.M_s:.6f} a={coef.a:.6f} k_p={coef.k_p:.6f} alpha={coef.alpha:.10f}"
     title += f"\nH_c={H_c:.0f} B_r={B_r:.3f} BH_max={BH_max:.0f}"
-    plot(sol, ref, title, f"{title.replace('\n',' ')}{PLOT_FILE_SUFFIX}")
+    file_name = title.replace("\n", " ")
+    plot(sol, ref, title, f"{file_name}{PLOT_FILE_SUFFIX}")
 
     # Save the BH curves.
     decimated_loop = sol.loop.decimate(OUTPUT_SAMPLE_COUNT)
