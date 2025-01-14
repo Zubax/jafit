@@ -129,7 +129,7 @@ def do_fit(
                 stop_evals=max_evaluations_per_stage,
                 cb_on_best=make_on_best_callback("global", ref),
             ),
-            tolerance=1e-6,
+            tolerance=1e-7,
         )
         _logger.info(f"Intermediate result:\n%s", coef)
 
