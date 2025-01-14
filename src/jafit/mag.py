@@ -49,7 +49,7 @@ class HysteresisLoop:
         started_at = time.monotonic()
         if not self.is_full:
             raise ValueError("Cannot balance the major loop because one of the curves is missing")
-        if max(len(self.descending), len(self.ascending)) / min(len(self.descending), len(self.ascending)) > 2:
+        if max(len(self.descending), len(self.ascending)) / min(len(self.descending), len(self.ascending)) >= 10:
             _logger.warning(
                 "HysteresisLoop: Balancing: the curves have significantly different lengths: desc=%d, asc=%d",
                 len(self.descending),
@@ -80,7 +80,7 @@ class HysteresisLoop:
         H = H[np.concatenate(([True], np.diff(H) > 1e-9))]
         assert np.all(np.diff(H) > 0)
         assert H.min() >= H_lo and H.max() <= H_hi
-        assert len(H) > len(dsc) and len(H) > len(asc)
+        assert len(H) >= len(dsc) and len(H) >= len(asc)
 
         # Interpolate both curves at the new H values.
         dsc = np.interp(H, dsc[:, 0], dsc[:, 1])

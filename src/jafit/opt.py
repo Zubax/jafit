@@ -41,6 +41,8 @@ def make_objective_function(
     stop_evals: int = 10**10,
     cb_on_best: Callable[[int, float, Coef, Solution], None] | None = None,
 ) -> ObjectiveFunction:
+    # Ensure the swept H-range at least covers the range given in the reference loop.
+    # This is to ensure that the saturation detection heuristic does not mistakenly terminate the sweep too early.
     H_stop_range = float(np.max(np.abs(ref.H_range))), float(H_range_max)
     epoch = 0
     best_loss = np.inf
