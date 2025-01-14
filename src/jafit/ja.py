@@ -88,7 +88,7 @@ def solve(
     tolerance: float = 1e-4,
     saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
-    max_iter: int = 10**7,
+    max_iter: int = 10**9,
     no_balancing: bool = False,
 ) -> Solution:
     """
@@ -114,6 +114,8 @@ def solve(
 
     def sweep(H: float, M: float, sign: int) -> npt.NDArray[np.float64]:
         assert sign in (-1, +1)
+        # This is allocated from the virtual memory anyway, so we can afford to be generous.
+        # No mapping to the physical memory is done until we actually attempt to write to the array.
         hm = np.empty((max_iter, 2), dtype=np.float64)
         hm[0] = H, M  # The initial point shall be set by the caller.
         idx = np.array([0], dtype=np.uint32)

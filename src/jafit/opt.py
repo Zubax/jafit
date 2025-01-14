@@ -52,7 +52,7 @@ def make_objective_function(
         try:
             sol = solve(c, tolerance=tolerance, H_stop_range=H_stop_range)
         except SolverError as ex:
-            _logger.debug("Solver error: %s: %s", type(ex).__name__, ex)
+            _logger.info("Solver error: %s: %s", type(ex).__name__, ex)
             loss = np.inf
         else:
             loss = loss_fun(ref, sol.loop.decimate(decimate_solution_to))
