@@ -48,13 +48,9 @@ class HysteresisLoop:
         """
         started_at = time.monotonic()
         if not self.is_full:
-            raise ValueError("Cannot balance the hysteresis loop because one of the branches is missing")
-        if max(len(self.descending), len(self.ascending)) / min(len(self.descending), len(self.ascending)) >= 2:
-            _logger.warning(
-                "HysteresisLoop: Balancing: the curves have significantly different lengths: desc=%d, asc=%d",
-                len(self.descending),
-                len(self.ascending),
-            )
+            raise ValueError(f"Cannot balance the hysteresis loop because one of the branches is missing: {self}")
+        if max(len(self.descending), len(self.ascending)) / min(len(self.descending), len(self.ascending)) >= 10:
+            _logger.warning("HysteresisLoop: Balancing: The curves have significantly different lengths:\n%s", self)
 
         # Prepare the curves such that they are both in the H-ascending order and have the same polarity.
         # There is one caveat: the sample density may vary in the beginning and at the end of the curves
@@ -89,28 +85,15 @@ class HysteresisLoop:
         mean = np.column_stack((H, 0.5 * (dsc + asc)))
         mean.setflags(write=False)
 
-        # Log diagnostics, as this is a critical operation.
-        # noinspection PyTypeChecker
-        def curve_stats(m: npt.NDArray[np.float64]) -> tuple[Any, ...]:
-            # noinspection PyTypeChecker
-            def lim(i: int) -> tuple[float, float]:
-                return m[0, i], m[-1, i]
-
-            return len(m), *lim(0), *lim(1)
-
+        result = HysteresisLoop(descending=mean, ascending=-mean[::-1])
         _logger.debug(
-            "HysteresisLoop: Balancing result:\n"
-            "desc: %7d pts H[%+012.3f,%+012.3f] M[%+012.3f,%+012.3f]\n"
-            "asc:  %7d pts H[%+012.3f,%+012.3f] M[%+012.3f,%+012.3f]\n"
-            "mean: %7d pts H[%+012.3f,%+012.3f] M[%+012.3f,%+012.3f]\n"
-            "removed %d points; elapsed %.0f ms",
-            *curve_stats(self.descending),
-            *curve_stats(self.ascending),
-            *curve_stats(mean),
+            "HysteresisLoop: Balancing done: removed %d points; elapsed %.0f ms; result:\nbefore: %s\nafter : %s",
             len(self.descending) + len(self.ascending) - len(mean),
             (time.monotonic() - started_at) * 1e3,
+            self,
+            result,
         )
-        return HysteresisLoop(descending=mean, ascending=-mean[::-1])
+        return result
 
     def decimate(self, approx_points: int) -> HysteresisLoop:
         """
@@ -150,7 +133,7 @@ class HysteresisLoop:
         def curve_stats(c: npt.NDArray[np.float64]) -> str:
             if len(c) == 0:
                 return "(pts=0)"
-            return f"(pts={len(c)}, H=[{c[0, 0]:+012.3f},{c[-1, 0]:+012.3f}], M=[{c[0, 1]:+012.3f},{c[-1, 1]:+012.3f})"
+            return f"(pts={len(c)}, H=[{c[0, 0]:+012.3f},{c[-1, 0]:+012.3f}], M=[{c[0, 1]:+012.3f},{c[-1, 1]:+012.3f}])"
 
         return (
             f"{type(self).__name__}"

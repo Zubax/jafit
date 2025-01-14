@@ -85,6 +85,17 @@ def do_fit(
     x_max = Coef(c_r=1, M_s=3e6, a=1e5, k_p=1e5, alpha=1)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
 
+    # Ensure the swept H-range is large enough.
+    # This is to ensure that the saturation detection heuristic does not mistakenly terminate the sweep too early.
+    H_stop_range = float(
+        max(
+            np.max(np.abs(ref.H_range)),
+            H_c * 2,
+            M_s_min * 0.1,
+        )
+    ), float(H_max)
+    _logger.info("H amplitude range: %s [A/m]", H_stop_range)
+
     if (H_c > 1 and B_r > 0.01) and skip_stages < 1:
         _logger.info("Demag knee detected; performing initial H_c|B_r|BH_max optimization")
         coef = fit_global(
@@ -95,7 +106,7 @@ def do_fit(
                 ref,
                 loss.demag_key_points,
                 tolerance=1.0,  # This is a very rough approximation
-                H_range_max=H_max,
+                H_stop_range=H_stop_range,
                 stop_loss=1e-3,  # Fine adjustment is meaningless because the solver and the loss fun are crude here
                 stop_evals=max_evaluations_per_stage,
                 cb_on_best=make_on_best_callback("initial", ref),
@@ -115,7 +126,7 @@ def do_fit(
                 ref,
                 loss.nearest,
                 tolerance=0.01,
-                H_range_max=H_max,
+                H_stop_range=H_stop_range,
                 stop_evals=max_evaluations_per_stage,
                 cb_on_best=make_on_best_callback("global", ref),
             ),
@@ -131,7 +142,7 @@ def do_fit(
             ref,
             loss.nearest,
             tolerance=1e-4,
-            H_range_max=H_max,
+            H_stop_range=H_stop_range,
             stop_evals=max_evaluations_per_stage,
             cb_on_best=make_on_best_callback("local", ref),
         ),

@@ -155,6 +155,8 @@ def solve(
     hm_maj_asc = sweep(H_last, M_last, +1)
 
     loop = HysteresisLoop(descending=hm_maj_dsc[::-1], ascending=hm_maj_asc)
+    assert loop.descending[0, 0] < loop.descending[-1, 0]
+    assert loop.ascending[0, 0] < loop.ascending[-1, 0]
     if (
         not no_balancing
         and loop.descending[0, 0] < 0 < loop.descending[-1, 0]

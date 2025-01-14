@@ -18,7 +18,7 @@ def plot(
     title: str,
     output_file: str | Path,
     *,
-    max_points: float = 1e4,
+    max_points: float = 1000,
 ) -> None:
     plt.rcParams["font.family"] = "monospace"
     fig, ax_b = plt.subplots(1, 1, figsize=(14, 10), sharex="all")  # type: ignore
