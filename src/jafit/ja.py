@@ -1,8 +1,7 @@
 # Copyright (C) 2025 Pavel Kirienko <pavel.kirienko@zubax.com>
 
 """
-Implementation of the Jiles-Atherton model from COMSOL Multiphysics.
-For the definition of the model, see the enclosed PDF with the relevant excerpt from the COMSOL user reference.
+Jiles-Atherton solver.
 """
 
 from __future__ import annotations
@@ -11,11 +10,7 @@ import dataclasses
 import numpy as np
 import numpy.typing as npt
 from .util import njit
-
-
-mu_0 = 1.2566370614359173e-6  # Vacuum permeability [henry/meter]
-
-_EPSILON = 1e-9  # Small number for numerical stability
+from .mag import HysteresisLoop
 
 
 class SolverError(RuntimeError):
@@ -65,7 +60,7 @@ class Coef:
             raise ValueError(f"alpha invalid: {self.alpha}")
 
 
-COEF_COMSOL_JA_MATERIAL = Coef(c_r=0.1, M_s=1e6, a=560, k_p=1200, alpha=0.0007)
+COEF_COMSOL_JA_MATERIAL = Coef(c_r=0.1, M_s=1.6e6, a=560, k_p=1200, alpha=0.0007)
 """
 Values are taken from the material properties named "Jiles-Atherton Hysteretic Material" in COMSOL Multiphysics.
 Useful for testing and validation.
@@ -75,16 +70,16 @@ Useful for testing and validation.
 @dataclasses.dataclass(frozen=True)
 class Solution:
     """
-    Each curve segment contains an nx3 matrix, where the columns are the applied field H, magnetization M,
-    and flux density B, respectively; one row per sample point.
+    Each curve segment contains an nx2 matrix, where the columns are the applied field H and magnetization M.
     """
 
-    HMB_virgin: npt.NDArray[np.float64]
-    HMB_major_descending: npt.NDArray[np.float64]
-    HMB_major_ascending: npt.NDArray[np.float64] | None = None
+    virgin: npt.NDArray[np.float64]
+    """
+    The virgin curve traced from H=0, M=0 to saturation in the positive direction.
+    Each row contains the H and M values.
+    """
 
-    # TODO balancing: mirror the ascending curve around the origin and merge it with the descending curve
-    # Requires interpolation.
+    loop: HysteresisLoop
 
 
 def solve(
@@ -94,7 +89,7 @@ def solve(
     saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
     max_iter: int = 10**7,
-    no_ascent: bool = False,
+    no_balancing: bool = False,
 ) -> Solution:
     """
     Solves the JA model for the given coefficients and initial conditions by sweeping the magnetization in the
@@ -106,25 +101,25 @@ def solve(
     The sweeps will stop when either the magnetic susceptibility drops below the specified threshold (which indicates
     that the material is saturated) or when the applied field magnitude exceeds ```H_stop_range[1]```.
     The saturation will not be detected unless the H-field magnitude is at least ```H_stop_range[0]```;
-    this is done to handle certain materials that exhibit very low susceptibility at weak fields.
+    this is done to handle materials that exhibit very low susceptibility at weak fields.
 
     The solver will stop the sweep early if a floating point error is raised.
     This can be paired with ``np.seterr(over="raise")`` to simply utilize the maximum range of the floating point
     representation without any special handling.
 
-    Returns sample points for the H, M, and B fields in the order of their appearance.
-    If the sweep requires more than ```max_iter``` points, a SolverError will be raised.
+    If the sweep requires more than ``max_iter`` points, a SolverError will be raised.
+    In that case, either the ``max_iter`` needs to be raised, or the tolerance needs to be relaxed.
     """
     c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
 
-    def sweep_hmb(H: float, M: float, sign: int) -> npt.NDArray[np.float64]:
+    def sweep(H: float, M: float, sign: int) -> npt.NDArray[np.float64]:
         assert sign in (-1, +1)
-        hmb = np.empty((max_iter, 3), dtype=np.float64)
-        hmb[0] = H, M, np.nan  # The initial point shall be set by the caller.
+        hm = np.empty((max_iter, 2), dtype=np.float64)
+        hm[0] = H, M  # The initial point shall be set by the caller.
         idx = np.array([0], dtype=np.uint32)
         try:
             status = _solve(
-                hm_out=hmb[:, :2],
+                hm_out=hm,
                 idx_out=idx,
                 c_r=c_r,
                 M_s=M_s,
@@ -138,28 +133,38 @@ def solve(
             )
         except (FloatingPointError, ZeroDivisionError) as ex:
             status = "Too few points in the sweep" if idx[0] < 10 else ""
-            H, M, _ = hmb[idx[0]]
-            _logger.warning("Sweep stopped at #%s, H=%+.3f, M=%+.3f due to numerical error: %s", idx[0], H, M, ex)
+            H, M = hm[idx[0]]
+            _logger.warning(
+                "Sweep stopped at #%s, H=%+.3f, M=%+.3f with %s due to numerical error: %s", idx[0], H, M, coef, ex
+            )
+            _logger.debug("Stack trace", exc_info=True)
 
-        hmb = hmb[: idx[0] + 1]
-        hmb[:, 2] = mu_0 * (hmb[:, 0] + hmb[:, 1])
-        hmb.setflags(write=False)
-        H, M, _ = hmb[-1]
+        hm = hm[: idx[0] + 1]
+        hm.setflags(write=False)
+        H, M = hm[-1]
         if status:
-            raise ConvergenceError(f"Convergence failure at #{idx[0]}, H={H:+.3f}, M={M:+.3f}: {status}")
-        return hmb
+            raise ConvergenceError(f"Convergence failure at #{idx[0]} with {coef}, H={H:+.3f}, M={M:+.3f}: {status}")
+        return hm
 
-    hmb_virgin = sweep_hmb(0, 0, +1)
+    hm_virgin = sweep(0, 0, +1)
 
-    H_last, M_last, _ = hmb_virgin[-1]
-    hmb_maj_dsc = sweep_hmb(H_last, M_last, -1)
+    H_last, M_last = hm_virgin[-1]
+    hm_maj_dsc = sweep(H_last, M_last, -1)
 
-    hmb_maj_asc: npt.NDArray[np.float64] | None = None
-    if not no_ascent:
-        H_last, M_last, _ = hmb_maj_dsc[-1]
-        hmb_maj_asc = sweep_hmb(H_last, M_last, +1)
+    H_last, M_last = hm_maj_dsc[-1]
+    hm_maj_asc = sweep(H_last, M_last, +1)
 
-    return Solution(HMB_virgin=hmb_virgin, HMB_major_descending=hmb_maj_dsc, HMB_major_ascending=hmb_maj_asc)
+    loop = HysteresisLoop(descending=hm_maj_dsc[::-1], ascending=hm_maj_asc)
+    assert loop.descending[0, 0] < loop.descending[-1, 0]
+    assert loop.ascending[0, 0] < loop.ascending[-1, 0]
+    if (
+        not no_balancing
+        and loop.descending[0, 0] < 0 < loop.descending[-1, 0]
+        and loop.ascending[0, 0] < 0 < loop.ascending[-1, 0]
+    ):
+        loop = loop.balance()
+
+    return Solution(virgin=hm_virgin, loop=loop)
 
 
 @njit(nogil=True)
@@ -186,7 +191,7 @@ def _solve(
     assert idx_out.shape == (1,)
     assert idx_out[0] == 0
 
-    dH_abs = 1e-3  # This is just a guess that will be dynamically refined.
+    dH_abs = 0.01  # This is just a guess that will be dynamically refined.
     max_iter = hm_out.shape[0]
     assert max_iter > 1
     assert np.isfinite(hm_out[0]).all()  # We require that the first point is already filled in.
@@ -229,7 +234,7 @@ def _solve(
 
 @njit(nogil=True)
 def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, direction: int) -> float:
-    # noinspection PyTypeChecker
+    # noinspection PyTypeChecker,PyShadowingNames
     """
     Evaluates the magnetic susceptibility derivative at the given point of the M(H) curve.
     The result is sensitive to the sign of the H change; the direction is defined as sign(dH).
@@ -256,7 +261,7 @@ def _langevin(x: float) -> float:
     L(x) = coth(x) - 1/x
     For tensors, the function is applied element-wise.
     """
-    if np.abs(x) < _EPSILON:  # For very small |x|, use the series expansion ~ x/3
+    if np.abs(x) < 1e-10:  # For very small |x|, use the series expansion ~ x/3
         return x / 3.0
     return 1.0 / np.tanh(x) - 1.0 / x  # type: ignore
 
@@ -267,7 +272,7 @@ def _dL_dx(x: float) -> float:
     Derivative of Langevin L(x) = coth(x) - 1/x.
     d/dx [coth(x) - 1/x] = -csch^2(x) + 1/x^2.
     """
-    if np.abs(x) < _EPSILON:  # series expansion of L(x) ~ x/3 -> derivative ~ 1/3 near zero
+    if np.abs(x) < 1e-10:  # series expansion of L(x) ~ x/3 -> derivative ~ 1/3 near zero
         return 1.0 / 3.0
     # exact expression: -csch^2(x) + 1/x^2
     # csch^2(x) = 1 / sinh^2(x)

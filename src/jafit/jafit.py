@@ -1,26 +1,30 @@
 # Copyright (C) 2025 Pavel Kirienko <pavel.kirienko@zubax.com>
 
 """
-This is a simple utility that fits the Jiles-Atherton (JA) model coefficients for a given BH curve.
-The JA model used here follows that of COMSOL Multiphysics; see the enclosed PDF with the relevant excerpt
-from the COMSOL user reference.
+Jiles-Atherton system identification tool: Given a BH curve, finds the Jiles-Atherton model coefficients.
+Refer to the README.md for the usage instructions.
 """
 
 from __future__ import annotations
 
 import sys
+import time
 import dataclasses
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, TypeVar, Iterable
 import logging
 from pathlib import Path
 import numpy as np
-import numpy.typing as npt
-from . import ja, bh, opt, vis
+from .ja import Solution, Coef, solve
+from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, mu_0, hm_to_hb, hm_to_hj
+from .opt import fit_global, fit_local, make_objective_function
+from . import loss, io
 
 
 PLOT_FILE_SUFFIX = ".jafit.png"
 CURVE_FILE_SUFFIX = ".jafit.tab"
+
+OUTPUT_SAMPLE_COUNT = 1000
 
 BG_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 """We only need one worker."""
@@ -28,14 +32,18 @@ BG_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 T = TypeVar("T")
 
 
-def make_on_best_callback(
-    file_name_prefix: str, bh_ref: npt.NDArray[np.float64]
-) -> Callable[[int, float, ja.Coef, ja.Solution], None]:
+def make_on_best_callback(file_name_prefix: str, ref: HysteresisLoop) -> Callable[[int, float, Coef, Solution], None]:
 
-    def cb(epoch: int, loss: float, coef: ja.Coef, sol: ja.Solution) -> None:
+    def cb(epoch: int, loss_value: float, coef: Coef, sol: Solution) -> None:
         def bg() -> None:
-            plot_file = f"{file_name_prefix}_#{epoch:05}_{loss:.6f}_{coef}{PLOT_FILE_SUFFIX}"
-            vis.plot(sol, plot_file, bh_ref)
+            try:
+                started_at = time.monotonic()
+                plot_file = f"{file_name_prefix}_#{epoch:05}_{loss_value:.6f}_{coef}{PLOT_FILE_SUFFIX}"
+                plot(sol, ref, str(coef), plot_file)
+                _logger.debug("Plotting %r took %.0f ms", plot_file, (time.monotonic() - started_at) * 1e3)
+            except Exception as ex:
+                _logger.error("Failed to plot: %s: %s", type(ex).__name__, ex)
+                _logger.debug("Failed to plot: %s", ex, exc_info=True)
 
         # Plotting can take a while, so we do it in a background thread.
         # We do release the GIL in the solver very often, so this is not a problem.
@@ -46,7 +54,7 @@ def make_on_best_callback(
 
 
 def do_fit(
-    bh_curve: npt.NDArray[np.float64],
+    ref: HysteresisLoop,
     *,
     c_r: float | None,
     M_s: float | None,
@@ -56,44 +64,51 @@ def do_fit(
     H_max: float,
     max_evaluations_per_stage: int,
     skip_stages: int,
-) -> ja.Coef:
-    H_c, B_r, BH_max = bh.extract_H_c_B_r_BH_max_from_major_descending_loop(bh_curve)
-    _logger.info(
-        "Reference BH curve has %s points. Derived parameters: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3",
-        len(bh_curve),
-        H_c,
-        B_r,
-        BH_max,
-    )
-    M_s_min = B_r / ja.mu_0  # Heuristic: B=mu_0*(H+M); H=0; B=mu_0*M; hence, M_s>=B_r/mu_0
+) -> Coef:
+    if len(ref.descending) == 0:
+        raise ValueError("The reference descending curve is empty")
+    H_c, B_r, BH_max = extract_H_c_B_r_BH_max(ref.descending)
+    _logger.info("Given: %s; derived parameters: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", ref, H_c, B_r, BH_max)
+    M_s_min = B_r / mu_0  # Heuristic: B=mu_0*(H+M); H=0; B=mu_0*M; hence, M_s>=B_r/mu_0
     _logger.info("Derived minimum M_s: %.6f A/m", M_s_min)
 
-    coef = ja.Coef(
+    coef = Coef(
         c_r=_perhaps(c_r, 1e-6),
         M_s=_perhaps(M_s, M_s_min * 1.001),  # Optimizers tend to be unstable if parameters are too close to the bounds
         a=_perhaps(a, 1e4),
         k_p=_perhaps(k_p, 1e4),
         alpha=_perhaps(alpha, 0.1),
     )
-    x_min = ja.Coef(c_r=0, M_s=M_s_min, a=0, k_p=0, alpha=0)
+    x_min = Coef(c_r=0, M_s=M_s_min, a=0, k_p=0, alpha=0)
     # TODO: better way of setting the upper bounds?
-    x_max = ja.Coef(c_r=1, M_s=3e6, a=1e5, k_p=1e5, alpha=1)
+    x_max = Coef(c_r=1, M_s=3e6, a=1e5, k_p=1e5, alpha=1)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
+
+    # Ensure the swept H-range is large enough.
+    # This is to ensure that the saturation detection heuristic does not mistakenly terminate the sweep too early.
+    H_stop_range = float(
+        max(
+            np.max(np.abs(ref.H_range)),
+            H_c * 2,
+            M_s_min * 0.1,
+        )
+    ), float(H_max)
+    _logger.info("H amplitude range: %s [A/m]", H_stop_range)
 
     if (H_c > 1 and B_r > 0.01) and skip_stages < 1:
         _logger.info("Demag knee detected; performing initial H_c|B_r|BH_max optimization")
-        coef = opt.fit_global(
+        coef = fit_global(
             x_0=coef,
             x_min=x_min,
             x_max=x_max,
-            obj_fn=opt.make_objective_function(
-                bh_curve,
-                opt.loss_demag_loop_key_points,
+            obj_fn=make_objective_function(
+                ref,
+                loss.demag_key_points,
                 tolerance=1.0,  # This is a very rough approximation
-                H_range_max=H_max,
+                H_stop_range=H_stop_range,
                 stop_loss=1e-3,  # Fine adjustment is meaningless because the solver and the loss fun are crude here
                 stop_evals=max_evaluations_per_stage,
-                cb_on_best=make_on_best_callback("initial", bh_curve),
+                cb_on_best=make_on_best_callback("initial", ref),
             ),
             tolerance=1e-3,
         )
@@ -102,33 +117,33 @@ def do_fit(
         _logger.info("Skipping initial optimization")
 
     if skip_stages < 2:
-        coef = opt.fit_global(
+        coef = fit_global(
             x_0=coef,
             x_min=x_min,
             x_max=x_max,
-            obj_fn=opt.make_objective_function(
-                bh_curve,
-                opt.loss_shape,
+            obj_fn=make_objective_function(
+                ref,
+                loss.nearest,
                 tolerance=0.01,
-                H_range_max=H_max,
+                H_stop_range=H_stop_range,
                 stop_evals=max_evaluations_per_stage,
-                cb_on_best=make_on_best_callback("global", bh_curve),
+                cb_on_best=make_on_best_callback("global", ref),
             ),
-            tolerance=1e-6,
+            tolerance=1e-7,
         )
         _logger.info(f"Intermediate result:\n%s", coef)
 
-    coef = opt.fit_local(
+    coef = fit_local(
         x_0=coef,
         x_min=x_min,
         x_max=x_max,
-        obj_fn=opt.make_objective_function(
-            bh_curve,
-            opt.loss_shape,
+        obj_fn=make_objective_function(
+            ref,
+            loss.nearest,
             tolerance=1e-4,
-            H_range_max=H_max,
+            H_stop_range=H_stop_range,
             stop_evals=max_evaluations_per_stage,
-            cb_on_best=make_on_best_callback("local", bh_curve),
+            cb_on_best=make_on_best_callback("local", ref),
         ),
     )
 
@@ -143,8 +158,27 @@ def do_fit(
     return coef
 
 
+def plot(sol: Solution, ref: HysteresisLoop | None, title: str, plot_file: Path | str) -> None:
+    from .vis import Style, Color, plot_hb
+
+    loop = sol.loop.decimate(OUTPUT_SAMPLE_COUNT)
+    specs = [
+        ("J(H) JA virgin", hm_to_hj(sol.virgin), Style.line, Color.gray),
+        (
+            "J(H) JA loop",
+            np.vstack((hm_to_hj(loop.descending)[::-1], hm_to_hj(loop.ascending))),
+            Style.line,
+            Color.black,
+        ),
+    ]
+    if ref:
+        specs.append(("J(H) reference descending", hm_to_hj(ref.descending), Style.scatter, Color.blue))
+        specs.append(("J(H) reference ascending", hm_to_hj(ref.ascending), Style.scatter, Color.red))
+    plot_hb(specs, title, plot_file)
+
+
 def run(
-    bh_curve_file: str | None = None,
+    ref_file_path: str | None = None,
     *unnamed_args: str,
     c_r: float | None = None,
     M_s: float | None = None,
@@ -152,7 +186,7 @@ def run(
     k_p: float | None = None,
     alpha: float | None = None,
     H_max: float = 3e6,
-    effort: int = 10**6,
+    effort: int = 10**7,
     skip_stages: int = 0,
     **named_args: dict[str, int | float | str],
 ) -> None:
@@ -165,15 +199,11 @@ def run(
     H_max = float(H_max)
     effort = int(effort)
 
-    bh_curve: npt.NDArray[np.float64] | None = None
-    if bh_curve_file is not None:
-        bh_curve = bh.load(Path(bh_curve_file))
-        bh.check(bh_curve)
-
-    if bh_curve is not None:
-        _logger.info("Fitting BH curve of %s points with starting parameters: %s", len(bh_curve), ja_dict)
+    ref = io.load(Path(ref_file_path)) if ref_file_path else None
+    if ref is not None:
+        _logger.info("Fitting %s with starting parameters: %s", ref, ja_dict)
         coef = do_fit(
-            bh_curve,
+            ref,
             **ja_dict,
             H_max=H_max,
             max_evaluations_per_stage=effort,
@@ -182,36 +212,31 @@ def run(
         # noinspection PyTypeChecker
         print(*(f"{k}={v}" for k, v in dataclasses.asdict(coef).items()))
     else:
-        _logger.info("Fitting will not be performed")
+        _logger.info("No BH curve given, fitting will not be performed")
         if any(x is None for x in ja_dict.values()):
             raise ValueError(f"Supplied coefficients are incomplete, and optimization is not requested: {ja_dict}")
-        coef = ja.Coef(**ja_dict)  # type: ignore
+        coef = Coef(**ja_dict)  # type: ignore
 
     # Solve with the coefficients and plot the results.
     _logger.info("Solving and plotting: %s", coef)
-    sol = ja.solve(coef, H_stop_range=(min(50e3, H_max), H_max))
-    _logger.debug("Descending loop contains %s points", len(sol.HMB_major_descending))
-    vis.plot(sol, f"{coef}{PLOT_FILE_SUFFIX}", bh_curve)
+    sol = solve(coef, H_stop_range=(min(50e3, H_max), H_max))
+    _logger.debug("Solved loop: %s", sol.loop)
 
     # Extract the key parameters from the descending loop.
-    H_c, B_r, BH_max = bh.extract_H_c_B_r_BH_max_from_major_descending_loop(sol.HMB_major_descending[::-1][:, (0, 2)])
+    H_c, B_r, BH_max = extract_H_c_B_r_BH_max(sol.loop.descending)
     _logger.info("Predicted parameters: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", H_c, B_r, BH_max)
 
+    # noinspection PyTypeChecker
+    title = f"c_r={coef.c_r:.10f} M_s={coef.M_s:.6f} a={coef.a:.6f} k_p={coef.k_p:.6f} alpha={coef.alpha:.10f}"
+    title += f"\nH_c={H_c:.0f} B_r={B_r:.3f} BH_max={BH_max:.0f}"
+    file_name = title.replace("\n", " ")
+    plot(sol, ref, title, f"{file_name}{PLOT_FILE_SUFFIX}")
+
     # Save the BH curves.
-    _save_bh_curve(sol.HMB_virgin[:, (0, 2)], "virgin")
-    _save_bh_curve(sol.HMB_major_descending[::-1][:, (0, 2)], "major_descending")
-    assert sol.HMB_major_ascending is not None
-    _save_bh_curve(sol.HMB_major_ascending[:, (0, 2)], "major_ascending")
-
-
-def _save_bh_curve(hb: npt.NDArray[np.float64], file_name_root: str, num_points: int = 5000) -> None:
-    if len(hb) > num_points * 2:
-        H, B = hb[:, 0], hb[:, 1]
-        assert np.all(np.diff(H) > 0)
-        H_resampled = np.linspace(H.min(), H.max(), num_points)
-        B_resampled = np.interp(H_resampled, H, B)
-        hb = np.column_stack((H_resampled, B_resampled))
-    bh.save(Path(f"B(H).{file_name_root}{CURVE_FILE_SUFFIX}"), hb)
+    decimated_loop = sol.loop.decimate(OUTPUT_SAMPLE_COUNT)
+    io.save(Path(f"B(H).loop{CURVE_FILE_SUFFIX}"), decimated_loop)
+    io.save(Path(f"B(H).desc{CURVE_FILE_SUFFIX}"), decimated_loop.descending)
+    io.save(Path(f"B(H).virgin{CURVE_FILE_SUFFIX}"), sol.virgin[:: max(1, len(sol.virgin) // OUTPUT_SAMPLE_COUNT)])
 
 
 def main() -> None:

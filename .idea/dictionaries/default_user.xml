@@ -2,10 +2,12 @@
   <dictionary name="default.user">
     <words>
       <w>anhysteretic</w>
+      <w>ansys</w>
       <w>atherson</w>
       <w>atherton</w>
       <w>comsol</w>
       <w>demag</w>
+      <w>downsampling</w>
       <w>fatol</w>
       <w>ftol</w>
       <w>gtol</w>
@@ -13,7 +15,9 @@
       <w>kirienko</w>
       <w>langevin</w>
       <w>maxiter</w>
+      <w>mticker</w>
       <w>multiphysics</w>
+      <w>renormalize</w>
       <w>rtol</w>
       <w>unalgebraic</w>
       <w>xatol</w>

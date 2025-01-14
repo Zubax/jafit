@@ -1,6 +1,8 @@
 # Copyright (C) 2025 Pavel Kirienko <pavel.kirienko@zubax.com>
 
 from logging import getLogger
+from pathlib import Path
+import enum
 import numpy as np
 import numpy.typing as npt
 import matplotlib
@@ -9,41 +11,56 @@ matplotlib.use("Agg")  # Choose the noninteractive backend; this has to be done 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
-from . import ja
+
+class Color(enum.Enum):
+    black = "black"
+    gray = "gray"
+    red = "red"
+    blue = "blue"
 
 
-def plot(
-    sol: ja.Solution,
-    output_file_name: str,
-    bh_curve_ref: npt.NDArray[np.float64] | None = None,
-    max_points: float = 1e4,
+class Style(enum.Enum):
+    scatter = enum.auto()
+    line = enum.auto()
+
+
+def plot_hb(
+    hb_specs: list[tuple[str, npt.NDArray[np.float64], Style, Color]],
+    title: str,
+    output_file: str | Path,
+    *,
+    max_points: float = 5000,
 ) -> None:
+    """
+    Plots B(H) data.
+    """
+    plt.rcParams["font.family"] = "monospace"
     fig, ax_b = plt.subplots(1, 1, figsize=(14, 10), sharex="all")  # type: ignore
     try:
 
-        def plot_hmb(fragment: npt.NDArray[np.float64], prefix: str) -> None:
-            n_points = fragment.shape[0]
-            if n_points > max_points:  # Select `max_points` evenly spaced indices from the fragment
+        def trace(hb: npt.NDArray[np.float64], label: str, style: Style, color: str) -> None:
+            n_points = hb.shape[0]
+            if n_points > max_points * 2:
                 indices = np.round(np.linspace(0, n_points - 1, int(max_points))).astype(int)
-                fragment = fragment[indices, :]
-            H_vals, M_vals, B_vals = fragment[:, 0], fragment[:, 1], fragment[:, 2]
-            J_vals = M_vals * ja.mu_0
-            ax_b.plot(H_vals, J_vals, label=f"{prefix} polarization J")
-            ax_b.plot(H_vals, B_vals, label=f"{prefix} flux density B")
+                hb = hb[indices, :]
+            match style:
+                case Style.scatter:
+                    ax_b.scatter(*hb.T, label=label, color=color, marker=",", s=1)  # type: ignore
+                case Style.line:
+                    ax_b.plot(*hb.T, label=label, color=color, linestyle="-")
 
-        plot_hmb(sol.HMB_virgin, "Virgin")
-        plot_hmb(sol.HMB_major_descending, "Major descending")
-        if sol.HMB_major_ascending is not None:
-            plot_hmb(sol.HMB_major_ascending, "Major ascending")
-
-        # Plot the reference BH curve
-        if bh_curve_ref is not None:
-            ax_b.scatter(bh_curve_ref[:, 0], bh_curve_ref[:, 1], marker=".", label="Reference BH curve")
+        for name, hb_data, hb_style, hb_color in hb_specs:
+            rows, cols = hb_data.shape
+            if rows == 0:
+                continue
+            if cols != 2:
+                raise ValueError(f"Invalid data shape: {hb_data.shape}")
+            trace(hb_data, name, hb_style, hb_color.value)
 
         # Configure B(H)|J(H) subplot
-        ax_b.set_title("Flux density and polarization vs. external field")
+        ax_b.set_title(title)
         ax_b.set_xlabel("H [ampere/meter]")
-        ax_b.set_ylabel("B|J [tesla]")
+        ax_b.set_ylabel("B [tesla]")
         ax_b.legend()
         ax_b.xaxis.set_minor_locator(mticker.AutoMinorLocator())
         ax_b.yaxis.set_minor_locator(mticker.AutoMinorLocator())
@@ -52,8 +69,12 @@ def plot(
 
         # Show the plot
         plt.tight_layout()
-        _logger.debug(f"Saving the plot to {output_file_name!r}")
-        plt.savefig(output_file_name)
+        if not isinstance(output_file, Path):
+            output_file = Path(output_file)
+        if not output_file.parent.exists():
+            output_file.parent.mkdir(parents=True)
+        _logger.debug(f"Saving the plot to: {output_file}")
+        plt.savefig(output_file)
     finally:
         plt.close(fig)
 

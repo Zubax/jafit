@@ -60,7 +60,7 @@ show_error_context = true
 mypy_path = []
 
 [[tool.mypy.overrides]]
-module = ["scipy", "scipy.*", "matplotlib", "numba"]
+module = ["scipy", "scipy.*", "matplotlib", "numba", "traitlets.*"]
 ignore_missing_imports = true
 
 # --------------------------------------------------  BLACK  --------------------------------------------------
