@@ -7,7 +7,7 @@ from .mag import extract_H_c_B_r_BH_max, HysteresisLoop
 from .util import njit
 
 
-def demag_key_points(ref: HysteresisLoop, sol: HysteresisLoop, eps: float = 1e-9) -> float:
+def demag_key_points(ref: HysteresisLoop, sol: HysteresisLoop, *, eps: float = 1e-9) -> float:
     """
     Dissimilarity metric that considers only H_c, B_r, and BH_max; all of these parameters should be much greater than 0
     (i.e., the H(M) curve should pass through the second quadrant far from the origin).
@@ -33,6 +33,33 @@ def demag_key_points(ref: HysteresisLoop, sol: HysteresisLoop, eps: float = 1e-9
     loss_B_r = np.abs(ref_B_r - sol_B_r) / max(abs(ref_B_r), eps)
     loss_BH_max = np.abs(ref_BH_max - sol_BH_max) / max(abs(ref_BH_max), eps)
     return float(loss_H_c + loss_B_r + loss_BH_max)
+
+
+def magnetization(ref: HysteresisLoop, sol: HysteresisLoop, *, lattice_size: int = 10**4) -> float:
+    """
+    The ordinary dissimilarity metric that computes sqrt(sum(( M_ref(H)-M_sol(H) )**2)/n)
+    for every H in the regular lattice of the specified size n on every branch.
+    The computed loss values per loop branch are averaged.
+    Normalization is not needed because both coordinates are in the same units [A/m];
+    this is also the dimension of the computed loss value.
+    Computationally this is very cheap.
+    """
+    H_range = max(ref.H_range[0], sol.H_range[0]), min(ref.H_range[1], sol.H_range[1])
+    H_lattice = np.linspace(*H_range, lattice_size)
+
+    def loss(hm_ref: npt.NDArray[np.float64], hm_sol: npt.NDArray[np.float64]) -> float:
+        M_ref = np.interp(H_lattice, hm_ref[:, 0], hm_ref[:, 1])
+        M_sol = np.interp(H_lattice, hm_sol[:, 0], hm_sol[:, 1])
+        return np.sqrt(np.mean((M_ref - M_sol) ** 2))
+
+    loss_values = []
+    if len(ref.descending) and len(sol.descending):
+        loss_values.append(loss(ref.descending, sol.descending))
+    if len(ref.ascending) and len(sol.ascending):
+        loss_values.append(loss(ref.ascending, sol.ascending))
+    if not loss_values:
+        raise ValueError("No same-side hysteresis branches to compare")
+    return float(np.mean(loss_values))
 
 
 def nearest(ref: HysteresisLoop, sol: HysteresisLoop) -> float:
