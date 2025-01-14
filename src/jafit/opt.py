@@ -60,11 +60,10 @@ def make_objective_function(
         is_best = loss < best_loss
         best_loss = loss if is_best else best_loss
         (_logger.info if is_best else _logger.debug)(
-            "Solution #%s: %s loss=%.6f, H_stop_range=%s, tolerance=%f, elapsed=%.1fms",
+            "Solution #%05d: %s loss=%.6f, tolerance=%f, elapsed=%.0fms",
             epoch,
             c,
             loss,
-            H_stop_range,
             tolerance,
             elapsed * 1e3,
         )
