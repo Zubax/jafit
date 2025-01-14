@@ -24,13 +24,13 @@ Be sure to launch the tool from a dedicated directory because it may generate a 
 All pre-existing outputs in the current working directory are removed at startup.
 
 ```shell
-jafit data/AlNiCo_5.tab
+jafit "data/B(H).AlNiCo_5.tab"
 ```
 
 Optionally, you can provide the initial guess for (some of) the coefficients like `c_r=0.07`, etc:
 
 ```shell
-jafit data/bh-lng37-ansys.tab c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
+jafit "data/B(H).LNG37.ansys.tab" c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 ```
 
 Solve the JA equation with the given coefficients:
