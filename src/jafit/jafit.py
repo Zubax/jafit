@@ -186,7 +186,7 @@ def run(
     k_p: float | None = None,
     alpha: float | None = None,
     H_max: float = 3e6,
-    effort: int = 10**6,
+    effort: int = 10**7,
     skip_stages: int = 0,
     **named_args: dict[str, int | float | str],
 ) -> None:
