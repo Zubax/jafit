@@ -136,7 +136,10 @@ def solve(
         except (FloatingPointError, ZeroDivisionError) as ex:
             status = "Too few points in the sweep" if idx[0] < 10 else ""
             H, M = hm[idx[0]]
-            _logger.warning("Sweep stopped at #%s, H=%+.3f, M=%+.3f due to numerical error: %s", idx[0], H, M, ex)
+            _logger.warning(
+                "Sweep stopped at #%s, H=%+.3f, M=%+.3f with %s due to numerical error: %s", idx[0], H, M, coef, ex
+            )
+            _logger.debug("Stack trace", exc_info=True)
 
         hm = hm[: idx[0] + 1]
         hm.setflags(write=False)

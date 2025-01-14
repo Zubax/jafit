@@ -191,7 +191,7 @@ def run(
     # Solve with the coefficients and plot the results.
     _logger.info("Solving and plotting: %s", coef)
     sol = solve(coef, H_stop_range=(min(50e3, H_max), H_max))
-    _logger.debug("Solved major loop: %s", sol.loop)
+    _logger.debug("Solved loop: %s", sol.loop)
 
     # Extract the key parameters from the descending loop.
     H_c, B_r, BH_max = extract_H_c_B_r_BH_max(sol.loop.descending)

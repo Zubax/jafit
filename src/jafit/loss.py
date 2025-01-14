@@ -41,7 +41,7 @@ def nearest(ref: HysteresisLoop, sol: HysteresisLoop) -> float:
     nearest point on the solution H(M) curves. The computed loss values per loop branch are averaged.
     Normalization is not needed because both coordinates are in the same units [A/m];
     this is also the dimension of the computed loss value.
-    The computational complexity is high, not recommended for large datasets without downsampling.
+    The computational complexity is high, not recommended for large datasets without prior downsampling.
     """
     loss: list[np.float64] = []
     if len(ref.descending) and len(sol.descending):

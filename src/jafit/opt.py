@@ -37,6 +37,7 @@ def make_objective_function(
     *,
     tolerance: float,
     H_range_max: float,
+    decimate_solution_to: int = 10_000,
     stop_loss: float = -np.inf,
     stop_evals: int = 10**10,
     cb_on_best: Callable[[int, float, Coef, Solution], None] | None = None,
@@ -53,10 +54,11 @@ def make_objective_function(
         started_at = time.monotonic()
         try:
             sol = solve(c, tolerance=tolerance, H_stop_range=H_stop_range)
-            loss = loss_fun(ref, sol.loop)
         except SolverError as ex:
             _logger.debug("Solver error: %s: %s", type(ex).__name__, ex)
             loss = np.inf
+        else:
+            loss = loss_fun(ref, sol.loop.decimate(decimate_solution_to))
         elapsed = time.monotonic() - started_at
         is_best = loss < best_loss
         best_loss = loss if is_best else best_loss

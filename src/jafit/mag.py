@@ -80,7 +80,7 @@ class HysteresisLoop:
         H = H[np.concatenate(([True], np.diff(H) > 1e-9))]
         assert np.all(np.diff(H) > 0)
         assert H.min() >= H_lo and H.max() <= H_hi
-        assert len(H) >= len(dsc) and len(H) >= len(asc)
+        assert len(H) >= len(dsc) and len(H) >= len(asc), f"{H=}, {dsc=}, {asc=}"
 
         # Interpolate both curves at the new H values.
         dsc = np.interp(H, dsc[:, 0], dsc[:, 1])
