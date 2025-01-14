@@ -8,6 +8,7 @@ Refer to the README.md for the usage instructions.
 from __future__ import annotations
 
 import sys
+import time
 import dataclasses
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, TypeVar, Iterable
@@ -15,8 +16,7 @@ import logging
 from pathlib import Path
 import numpy as np
 from .ja import Solution, Coef, solve
-from .vis import plot
-from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, mu_0
+from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, mu_0, hm_to_hb, hm_to_hj
 from .opt import fit_global, fit_local, make_objective_function
 from . import loss, io
 
@@ -36,15 +36,14 @@ def make_on_best_callback(file_name_prefix: str, ref: HysteresisLoop) -> Callabl
 
     def cb(epoch: int, loss_value: float, coef: Coef, sol: Solution) -> None:
         def bg() -> None:
-            plot_file = f"{file_name_prefix}_#{epoch:05}_{loss_value:.6f}_{coef}{PLOT_FILE_SUFFIX}"
-            curves = {
-                "JA virgin": sol.virgin,
-                "JA major descending": sol.loop.descending,
-                "JA major ascending": sol.loop.ascending,
-                "reference descending": ref.descending,
-                "reference ascending": ref.ascending,
-            }
-            plot(curves, str(coef), plot_file)
+            try:
+                started_at = time.monotonic()
+                plot_file = f"{file_name_prefix}_#{epoch:05}_{loss_value:.6f}_{coef}{PLOT_FILE_SUFFIX}"
+                plot(sol, ref, str(coef), plot_file)
+                _logger.debug("Plotting %r took %.0f ms", plot_file, (time.monotonic() - started_at) * 1e3)
+            except Exception as ex:
+                _logger.error("Failed to plot: %s: %s", type(ex).__name__, ex)
+                _logger.debug("Failed to plot: %s", ex, exc_info=True)
 
         # Plotting can take a while, so we do it in a background thread.
         # We do release the GIL in the solver very often, so this is not a problem.
@@ -159,6 +158,25 @@ def do_fit(
     return coef
 
 
+def plot(sol: Solution, ref: HysteresisLoop | None, title: str, plot_file: Path | str) -> None:
+    from .vis import Style, Color, plot_hb
+
+    loop = sol.loop.decimate(OUTPUT_SAMPLE_COUNT)
+    specs = [
+        ("J(H) JA virgin", hm_to_hj(sol.virgin), Style.line, Color.gray),
+        (
+            "J(H) JA loop",
+            np.vstack((hm_to_hj(loop.descending)[::-1], hm_to_hj(loop.ascending))),
+            Style.line,
+            Color.black,
+        ),
+    ]
+    if ref:
+        specs.append(("J(H) reference descending", hm_to_hj(ref.descending), Style.scatter, Color.blue))
+        specs.append(("J(H) reference ascending", hm_to_hj(ref.ascending), Style.scatter, Color.red))
+    plot_hb(specs, title, plot_file)
+
+
 def run(
     ref_file_path: str | None = None,
     *unnamed_args: str,
@@ -211,15 +229,7 @@ def run(
     # noinspection PyTypeChecker
     title = f"c_r={coef.c_r:.10f} M_s={coef.M_s:.6f} a={coef.a:.6f} k_p={coef.k_p:.6f} alpha={coef.alpha:.10f}"
     title += f"\nH_c={H_c:.0f} B_r={B_r:.3f} BH_max={BH_max:.0f}"
-    plot_curves = {
-        "JA virgin": sol.virgin,
-        "JA descending": sol.loop.descending,
-        "JA ascending": sol.loop.ascending,
-    }
-    if ref:
-        plot_curves["reference descending"] = ref.descending
-        plot_curves["reference descending"] = ref.ascending
-    plot(plot_curves, title, f"{title.replace('\n',' ')}{PLOT_FILE_SUFFIX}")
+    plot(sol, ref, title, f"{title.replace('\n',' ')}{PLOT_FILE_SUFFIX}")
 
     # Save the BH curves.
     decimated_loop = sol.loop.decimate(OUTPUT_SAMPLE_COUNT)
