@@ -1,6 +1,7 @@
 # Copyright (C) 2025 Pavel Kirienko <pavel.kirienko@zubax.com>
 
 from logging import getLogger
+from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 import matplotlib
@@ -15,7 +16,7 @@ from .mag import hm_to_hb, hm_to_hj
 def plot(
     hm_named: dict[str, npt.NDArray[np.float64]],
     title: str,
-    output_file_name: str,
+    output_file: str | Path,
     *,
     max_points: float = 1e4,
 ) -> None:
@@ -53,8 +54,12 @@ def plot(
 
         # Show the plot
         plt.tight_layout()
-        _logger.debug(f"Saving the plot to {output_file_name!r}")
-        plt.savefig(output_file_name)
+        if not isinstance(output_file, Path):
+            output_file = Path(output_file)
+        if not output_file.parent.exists():
+            output_file.parent.mkdir(parents=True)
+        _logger.debug(f"Saving the plot to: {output_file}")
+        plt.savefig(output_file)
     finally:
         plt.close(fig)
 

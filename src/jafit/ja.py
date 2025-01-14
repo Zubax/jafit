@@ -79,7 +79,7 @@ class Solution:
     Each row contains the H and M values.
     """
 
-    major_loop: HysteresisLoop
+    loop: HysteresisLoop
 
 
 def solve(
@@ -153,11 +153,11 @@ def solve(
     H_last, M_last = hm_maj_dsc[-1]
     hm_maj_asc = sweep(H_last, M_last, +1)
 
-    major_loop = HysteresisLoop(descending=hm_maj_dsc[::-1], ascending=hm_maj_asc)
+    loop = HysteresisLoop(descending=hm_maj_dsc[::-1], ascending=hm_maj_asc)
     if not asymmetric_material:
-        major_loop = major_loop.balance()
+        loop = loop.balance()
 
-    return Solution(virgin=hm_virgin, major_loop=major_loop)
+    return Solution(virgin=hm_virgin, loop=loop)
 
 
 @njit(nogil=True)

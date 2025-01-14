@@ -6,14 +6,12 @@ Jiles-Atherton system identification tool: Given a BH curve, finds the Jiles-Ath
 
 ## Usage
 
-The tool accepts a tab-separated file encoding the demagnetization BH curve as a command line argument,
-where the first column contains the magnetic field strength H in ampere/meter,
-and the second column contains the magnetic flux density B in tesla.
-The rows should be ordered by increasing H.
+The tool accepts a tab-separated (TSV) file encoding the reference BH curve as a command line argument.
+The first column contains the magnetic field strength H \[ampere/meter],
+and the second column contains the magnetic flux density B \[tesla].
+The file may contain either the entire major hysteresis loop, or any part of it;
+e.g., only a part of the descending branch.
 The first row may or may not be the header row.
-
-Ideally, the reference BH curve should cover the entire range from negative to positive (near-)saturation;
-providing only the third quadrant is not sufficient for full system identification.
 
 Install the package before using it:
 
@@ -22,12 +20,17 @@ pip install .
 ```
 
 Derive parameters for a given BH curve as shown below.
-Optionally, you can provide the initial guess for (some of) the coefficients like `c_r=0.07`, etc.
 Be sure to launch the tool from a dedicated directory because it may generate a lot of intermediate output files.
-All existing outputs in the current working directory are removed at startup.
+All pre-existing outputs in the current working directory are removed at startup.
 
 ```shell
-jafit data/bh-lng37.tab
+jafit data/AlNiCo_5.tab
+```
+
+Optionally, you can provide the initial guess for (some of) the coefficients like `c_r=0.07`, etc:
+
+```shell
+jafit data/bh-lng37-ansys.tab c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 ```
 
 Solve the JA equation with the given coefficients:
@@ -37,6 +40,8 @@ jafit c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 ```
 
 Add `H_max=30e3` to manually limit the maximum H-field strength to 30 kA/m instead of relying on heuristics.
+Note that if the provided value is insufficient to reach saturation, the resulting hysteresis loop will
+be a minor loop!
 
 ## Development
 

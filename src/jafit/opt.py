@@ -51,7 +51,7 @@ def make_objective_function(
         started_at = time.monotonic()
         try:
             sol = solve(c, tolerance=tolerance, H_stop_range=H_stop_range)
-            loss = loss_fun(ref, sol.major_loop)
+            loss = loss_fun(ref, sol.loop)
         except SolverError as ex:
             _logger.debug("Solver error: %s: %s", type(ex).__name__, ex)
             loss = np.inf

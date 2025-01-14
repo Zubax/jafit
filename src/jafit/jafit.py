@@ -1,9 +1,8 @@
 # Copyright (C) 2025 Pavel Kirienko <pavel.kirienko@zubax.com>
 
 """
-This is a simple utility that fits the Jiles-Atherton (JA) model coefficients for a given BH curve.
-The JA model used here follows that of COMSOL Multiphysics; see the enclosed PDF with the relevant excerpt
-from the COMSOL user reference.
+Jiles-Atherton system identification tool: Given a BH curve, finds the Jiles-Atherton model coefficients.
+Refer to the README.md for the usage instructions.
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ from . import loss, io
 PLOT_FILE_SUFFIX = ".jafit.png"
 CURVE_FILE_SUFFIX = ".jafit.tab"
 
-OUTPUT_SAMPLE_COUNT = 5000
+OUTPUT_SAMPLE_COUNT = 1000
 
 BG_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 """We only need one worker."""
@@ -40,8 +39,8 @@ def make_on_best_callback(file_name_prefix: str, ref: HysteresisLoop) -> Callabl
             plot_file = f"{file_name_prefix}_#{epoch:05}_{loss_value:.6f}_{coef}{PLOT_FILE_SUFFIX}"
             curves = {
                 "JA virgin": sol.virgin,
-                "JA major descending": sol.major_loop.descending,
-                "JA major ascending": sol.major_loop.ascending,
+                "JA major descending": sol.loop.descending,
+                "JA major ascending": sol.loop.ascending,
                 "reference descending": ref.descending,
                 "reference ascending": ref.ascending,
             }
@@ -192,10 +191,10 @@ def run(
     # Solve with the coefficients and plot the results.
     _logger.info("Solving and plotting: %s", coef)
     sol = solve(coef, H_stop_range=(min(50e3, H_max), H_max))
-    _logger.debug("Solved major loop: %s", sol.major_loop)
+    _logger.debug("Solved major loop: %s", sol.loop)
 
     # Extract the key parameters from the descending loop.
-    H_c, B_r, BH_max = extract_H_c_B_r_BH_max(sol.major_loop.descending)
+    H_c, B_r, BH_max = extract_H_c_B_r_BH_max(sol.loop.descending)
     _logger.info("Predicted parameters: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", H_c, B_r, BH_max)
 
     # noinspection PyTypeChecker
@@ -203,8 +202,8 @@ def run(
     title += f"\nH_c={H_c:.0f} B_r={B_r:.3f} BH_max={BH_max:.0f}"
     plot_curves = {
         "JA virgin": sol.virgin,
-        "JA major descending": sol.major_loop.descending,
-        "JA major ascending": sol.major_loop.ascending,
+        "JA descending": sol.loop.descending,
+        "JA ascending": sol.loop.ascending,
     }
     if ref:
         plot_curves["reference descending"] = ref.descending
@@ -212,7 +211,7 @@ def run(
     plot(plot_curves, title, f"{title.replace('\n',' ')}{PLOT_FILE_SUFFIX}")
 
     # Save the BH curves.
-    decimated_loop = sol.major_loop.decimate(OUTPUT_SAMPLE_COUNT)
+    decimated_loop = sol.loop.decimate(OUTPUT_SAMPLE_COUNT)
     io.save(Path(f"B(H).loop{CURVE_FILE_SUFFIX}"), decimated_loop)
     io.save(Path(f"B(H).desc{CURVE_FILE_SUFFIX}"), decimated_loop.descending)
     io.save(Path(f"B(H).virgin{CURVE_FILE_SUFFIX}"), sol.virgin[:: max(1, len(sol.virgin) // OUTPUT_SAMPLE_COUNT)])
