@@ -143,7 +143,7 @@ def solve(
         hm.setflags(write=False)
         H, M = hm[-1]
         if status:
-            raise ConvergenceError(f"Convergence failure at #{idx[0]}, H={H:+.3f}, M={M:+.3f}: {status}")
+            raise ConvergenceError(f"Convergence failure at #{idx[0]} with {coef}, H={H:+.3f}, M={M:+.3f}: {status}")
         return hm
 
     hm_virgin = sweep(0, 0, +1)
