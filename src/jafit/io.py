@@ -97,6 +97,7 @@ def save(file_path: Path, data: HysteresisLoop | npt.NDArray[np.float64]) -> Non
     Saves the given hysteresis loop to a tab-separated (TSV) file containing two columns: H and B.
     """
     if isinstance(data, HysteresisLoop):
+        # Should we reverse one of the curves to make H more contiguous?
         return save(file_path, np.vstack((data.descending, data.ascending)))
 
     def table(hm: npt.NDArray[np.float64]) -> str:

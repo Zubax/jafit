@@ -40,8 +40,10 @@ def make_on_best_callback(file_name_prefix: str, ref: HysteresisLoop) -> Callabl
             plot_file = f"{file_name_prefix}_#{epoch:05}_{loss_value:.6f}_{coef}{PLOT_FILE_SUFFIX}"
             curves = {
                 "JA virgin": sol.virgin,
-                "JA major": np.vstack((sol.major_loop.descending, sol.major_loop.ascending)),
-                "reference": np.vstack((ref.descending, ref.ascending)),
+                "JA major descending": sol.major_loop.descending,
+                "JA major ascending": sol.major_loop.ascending,
+                "reference descending": ref.descending,
+                "reference ascending": ref.ascending,
             }
             plot(curves, str(coef), plot_file)
 
@@ -185,7 +187,7 @@ def run(
         _logger.info("No BH curve given, fitting will not be performed")
         if any(x is None for x in ja_dict.values()):
             raise ValueError(f"Supplied coefficients are incomplete, and optimization is not requested: {ja_dict}")
-        coef = ja.Coef(**ja_dict)  # type: ignore
+        coef = Coef(**ja_dict)  # type: ignore
 
     # Solve with the coefficients and plot the results.
     _logger.info("Solving and plotting: %s", coef)
@@ -201,17 +203,19 @@ def run(
     title += f"\nH_c={H_c:.0f} B_r={B_r:.3f} BH_max={BH_max:.0f}"
     plot_curves = {
         "JA virgin": sol.virgin,
-        "JA major loop": np.vstack((sol.major_loop.descending, sol.major_loop.ascending)),
+        "JA major descending": sol.major_loop.descending,
+        "JA major ascending": sol.major_loop.ascending,
     }
     if ref:
-        plot_curves["reference"] = np.vstack((ref.descending, ref.ascending))
+        plot_curves["reference descending"] = ref.descending
+        plot_curves["reference descending"] = ref.ascending
     plot(plot_curves, title, f"{title.replace('\n',' ')}{PLOT_FILE_SUFFIX}")
 
     # Save the BH curves.
     decimated_loop = sol.major_loop.decimate(OUTPUT_SAMPLE_COUNT)
-    io.save(Path(f"B(H).loop.{CURVE_FILE_SUFFIX}"), decimated_loop)
-    io.save(Path(f"B(H).desc.{CURVE_FILE_SUFFIX}"), decimated_loop.descending)
-    io.save(Path(f"B(H).virgin.{CURVE_FILE_SUFFIX}"), sol.virgin[:: max(1, len(sol.virgin) // OUTPUT_SAMPLE_COUNT)])
+    io.save(Path(f"B(H).loop{CURVE_FILE_SUFFIX}"), decimated_loop)
+    io.save(Path(f"B(H).desc{CURVE_FILE_SUFFIX}"), decimated_loop.descending)
+    io.save(Path(f"B(H).virgin{CURVE_FILE_SUFFIX}"), sol.virgin[:: max(1, len(sol.virgin) // OUTPUT_SAMPLE_COUNT)])
 
 
 def main() -> None:

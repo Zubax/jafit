@@ -87,8 +87,7 @@ class HysteresisLoop:
         asc = np.interp(H, asc[:, 0], asc[:, 1])
 
         # Compute the mean curve.
-        mean = 0.5 * (dsc + asc)
-        mean = np.column_stack((H, *mean.transpose()))
+        mean = np.column_stack((H, 0.5 * (dsc + asc)))
         mean.setflags(write=False)
 
         # Log diagnostics, as this is a critical operation.
@@ -150,6 +149,8 @@ class HysteresisLoop:
 
     def __str__(self) -> str:
         def curve_stats(c: npt.NDArray[np.float64]) -> str:
+            if len(c) == 0:
+                return "(pts=0)"
             return f"(pts={len(c)}, H=[{c[0, 0]:+012.3f},{c[-1, 0]:+012.3f}], M=[{c[0, 1]:+012.3f},{c[-1, 1]:+012.3f})"
 
         return (
@@ -159,7 +160,6 @@ class HysteresisLoop:
         )
 
 
-@njit
 def extract_H_c_B_r_BH_max(hm: npt.NDArray[np.float64]) -> tuple[float, float, float]:
     """
     For any M(H) curve, the computed B_r may have an arbitrary sign, while H_c and BH_max are always positive.

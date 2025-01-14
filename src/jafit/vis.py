@@ -19,18 +19,19 @@ def plot(
     *,
     max_points: float = 1e4,
 ) -> None:
+    plt.rcParams["font.family"] = "monospace"
     fig, ax_b = plt.subplots(1, 1, figsize=(14, 10), sharex="all")  # type: ignore
     try:
 
-        def trace(hm: npt.NDArray[np.float64], name: str) -> None:
+        def trace(hm: npt.NDArray[np.float64], label: str) -> None:
             n_points = hm.shape[0]
             if n_points > max_points:  # Select `max_points` evenly spaced indices from the fragment
                 indices = np.round(np.linspace(0, n_points - 1, int(max_points))).astype(int)
                 hm = hm[indices, :]
             hb = hm_to_hb(hm)
             hj = hm_to_hj(hm)
-            ax_b.plot(*hj.T, label=f"J {name}")
-            ax_b.plot(*hb.T, label=f"B {name}")
+            ax_b.plot(*hj.T, label=f"J(H) {label}")
+            ax_b.plot(*hb.T, label=f"B(H) {label}")
 
         for name, hm_data in hm_named.items():
             rows, cols = hm_data.shape
@@ -43,7 +44,7 @@ def plot(
         # Configure B(H)|J(H) subplot
         ax_b.set_title(title)
         ax_b.set_xlabel("H [ampere/meter]")
-        ax_b.set_ylabel("B|J [tesla]")
+        ax_b.set_ylabel("B [tesla]")
         ax_b.legend()
         ax_b.xaxis.set_minor_locator(mticker.AutoMinorLocator())
         ax_b.yaxis.set_minor_locator(mticker.AutoMinorLocator())
