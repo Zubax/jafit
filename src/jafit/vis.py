@@ -1,7 +1,6 @@
 # Copyright (C) 2025 Pavel Kirienko <pavel.kirienko@zubax.com>
 
 from logging import getLogger
-import dataclasses
 import numpy as np
 import numpy.typing as npt
 import matplotlib
@@ -10,38 +9,36 @@ matplotlib.use("Agg")  # Choose the noninteractive backend; this has to be done 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
-mu_0 = 1.2566370614359173e-6  # Vacuum permeability [henry/meter]
+from .mag import hm_to_hb, hm_to_hj
 
 
 def plot(
-    virgin: npt.NDArray[np.float64],
-    major_descending: npt.NDArray[np.float64],
-    major_ascending: npt.NDArray[np.float64],
+    hm_named: dict[str, npt.NDArray[np.float64]],
     title: str,
     output_file_name: str,
-    bh_curve_ref: npt.NDArray[np.float64] | None = None,
+    *,
     max_points: float = 1e4,
 ) -> None:
     fig, ax_b = plt.subplots(1, 1, figsize=(14, 10), sharex="all")  # type: ignore
     try:
 
-        def plot_hmb(fragment: npt.NDArray[np.float64], prefix: str) -> None:
-            n_points = fragment.shape[0]
+        def trace(hm: npt.NDArray[np.float64], name: str) -> None:
+            n_points = hm.shape[0]
             if n_points > max_points:  # Select `max_points` evenly spaced indices from the fragment
                 indices = np.round(np.linspace(0, n_points - 1, int(max_points))).astype(int)
-                fragment = fragment[indices, :]
-            H_vals, M_vals, B_vals = fragment[:, 0], fragment[:, 1], fragment[:, 2]
-            J_vals = M_vals * mu_0
-            ax_b.plot(H_vals, J_vals, label=f"{prefix} polarization J")
-            ax_b.plot(H_vals, B_vals, label=f"{prefix} flux density B")
+                hm = hm[indices, :]
+            hb = hm_to_hb(hm)
+            hj = hm_to_hj(hm)
+            ax_b.plot(*hj.T, label=f"J {name}")
+            ax_b.plot(*hb.T, label=f"B {name}")
 
-        plot_hmb(virgin, "Virgin")
-        plot_hmb(major_descending, "Major descending")
-        plot_hmb(major_ascending, "Major ascending")
-
-        # Plot the reference BH curve
-        if bh_curve_ref is not None:
-            ax_b.scatter(bh_curve_ref[:, 0], bh_curve_ref[:, 1], marker=".", label="Reference BH curve")
+        for name, hm_data in hm_named.items():
+            rows, cols = hm_data.shape
+            if rows == 0:
+                continue
+            if cols != 2:
+                raise ValueError(f"Invalid shape of the M(H) curve: {hm_data.shape}")
+            trace(hm_data, name)
 
         # Configure B(H)|J(H) subplot
         ax_b.set_title(title)

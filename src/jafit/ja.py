@@ -1,23 +1,16 @@
 # Copyright (C) 2025 Pavel Kirienko <pavel.kirienko@zubax.com>
 
 """
-Implementation of the Jiles-Atherton model from COMSOL Multiphysics.
-For the definition of the model, see the enclosed PDF with the relevant excerpt from the COMSOL user reference.
+Jiles-Atherton solver.
 """
 
 from __future__ import annotations
 from logging import getLogger
-from typing import Any
-import time
 import dataclasses
 import numpy as np
 import numpy.typing as npt
 from .util import njit
-
-
-mu_0 = 1.2566370614359173e-6  # Vacuum permeability [henry/meter]
-
-_EPSILON = 1e-9  # Small number for numerical stability
+from .mag import HysteresisLoop
 
 
 class SolverError(RuntimeError):
@@ -75,117 +68,18 @@ Useful for testing and validation.
 
 
 @dataclasses.dataclass(frozen=True)
-class MajorLoop:
-    """
-    Each array contains n rows of 3 elements: H-field, M-field, and B-field, respectively.
-    All curves are sorted in ascending order of the H-field.
-    """
-
-    descending: npt.NDArray[np.float64]
-    ascending: npt.NDArray[np.float64]
-
-    def balance(self) -> MajorLoop:
-        """
-        Returns a new MajorLoop object where both curves are made symmetric around the origin.
-        This is intended to reduce the integration error when the curves are not perfectly symmetric.
-        """
-        started_at = time.monotonic()
-
-        # Prepare the curves such that they are both in the H-ascending order and have the same polarity.
-        # There is one caveat: the sample density may vary in the beginning and at the end of the curves
-        # due to the automatic step width adjustment in the ODE solver.
-        # If the starting step size is small, the curve may have a higher density at the beginning than at the end.
-        # The descending curve will have a higher sample density in the upper-right part of the plot, and vice versa.
-        # After one of the curves is mirrored around the origin, they both will have a greater number of samples on
-        # one side, which causes the mean curve to be heavily disbalanced as well.
-        # This is something to be aware of, but it is probably not a problem in itself.
-        dsc = self.descending
-        asc = -self.ascending[::-1]  # Mirror around the origin and keep the H-ascending order.
-        assert dsc[0, 0] < dsc[-1, 0] and asc[0, 0] < asc[-1, 0]
-
-        # Ensure the final range is covered by both curves; otherwise, interpolation will not be possible.
-        H_lo = max(float(dsc[0, 0]), float(asc[0, 0]))
-        H_hi = min(float(dsc[-1, 0]), float(asc[-1, 0]))
-        assert H_lo < H_hi
-
-        # Merge all H values from both curves and sort them in the ascending order, removing values too close together.
-        H = np.concatenate((dsc[:, 0], asc[:, 0]))
-        H = np.unique(H[(H >= H_lo) & (H <= H_hi)])
-        H = H[np.concatenate(([True], np.diff(H) > _EPSILON))]
-        assert np.all(np.diff(H) > 0)
-        assert H.min() >= H_lo and H.max() <= H_hi
-        assert len(H) > len(dsc) and len(H) > len(asc)
-
-        # Interpolate both curves at the new H values.
-        dsc = np.column_stack(
-            (
-                np.interp(H, dsc[:, 0], dsc[:, 1]),
-                np.interp(H, dsc[:, 0], dsc[:, 2]),
-            )
-        )
-        asc = np.column_stack(
-            (
-                np.interp(H, asc[:, 0], asc[:, 1]),
-                np.interp(H, asc[:, 0], asc[:, 2]),
-            )
-        )
-
-        # Compute the mean curve.
-        mean = 0.5 * (dsc + asc)
-        mean = np.column_stack((H, *mean.transpose()))
-        mean.setflags(write=False)
-
-        # Log diagnostics, as this is a critical operation.
-        # noinspection PyTypeChecker
-        def curve_stats(m: npt.NDArray[np.float64]) -> tuple[Any, ...]:
-            # noinspection PyTypeChecker
-            def lim(i: int) -> tuple[float, float]:
-                return m[0, i], m[-1, i]
-
-            return len(m), *lim(0), *lim(1), *lim(2)
-
-        _logger.debug(
-            "Major loop: Balancing result:\n"
-            "desc: %7d pts H[%+012.3f,%+012.3f] M[%+012.3f,%+012.3f] B[%+012.9f,%+012.9f]\n"
-            "asc:  %7d pts H[%+012.3f,%+012.3f] M[%+012.3f,%+012.3f] B[%+012.9f,%+012.9f]\n"
-            "mean: %7d pts H[%+012.3f,%+012.3f] M[%+012.3f,%+012.3f] B[%+012.9f,%+012.9f]\n"
-            "removed %d points; elapsed %.0f ms",
-            *curve_stats(self.descending),
-            *curve_stats(self.ascending),
-            *curve_stats(mean),
-            len(self.descending) + len(self.ascending) - len(mean),
-            (time.monotonic() - started_at) * 1e3,
-        )
-
-        return MajorLoop(descending=mean, ascending=-mean[::-1])
-
-    def __post_init__(self) -> None:
-        rows, cols = self.descending.shape
-        if cols != 3 or rows < 2:
-            raise ValueError("Descending curve out of shape")
-        rows, cols = self.ascending.shape
-        if cols != 3 or rows < 2:
-            raise ValueError("Ascending curve out of shape")
-        if not np.all(np.diff(self.descending[:, 0]) > 0):
-            raise ValueError("Descending curve is not sorted in ascending order of the H-field")
-        if not np.all(np.diff(self.ascending[:, 0]) > 0):
-            raise ValueError("Ascending curve is not sorted in ascending order of the H-field")
-
-
-@dataclasses.dataclass(frozen=True)
 class Solution:
     """
-    Each curve segment contains an nx3 matrix, where the columns are the applied field H, magnetization M,
-    and flux density B, respectively; one row per sample point.
+    Each curve segment contains an nx2 matrix, where the columns are the applied field H and magnetization M.
     """
 
     virgin: npt.NDArray[np.float64]
     """
     The virgin curve traced from H=0, M=0 to saturation in the positive direction.
-    Each row contains the H, M, and B values.
+    Each row contains the H and M values.
     """
 
-    major_loop: MajorLoop
+    major_loop: HysteresisLoop
 
 
 def solve(
@@ -215,19 +109,19 @@ def solve(
     This can be paired with ``np.seterr(over="raise")`` to simply utilize the maximum range of the floating point
     representation without any special handling.
 
-    Returns sample points for the H, M, and B fields in the order of their appearance.
-    If the sweep requires more than ```max_iter``` points, a SolverError will be raised.
+    If the sweep requires more than ``max_iter`` points, a SolverError will be raised.
+    In that case, either the ``max_iter`` needs to be raised, or the tolerance needs to be relaxed.
     """
     c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
 
-    def sweep_hmb(H: float, M: float, sign: int) -> npt.NDArray[np.float64]:
+    def sweep(H: float, M: float, sign: int) -> npt.NDArray[np.float64]:
         assert sign in (-1, +1)
-        hmb = np.empty((max_iter, 3), dtype=np.float64)
-        hmb[0] = H, M, np.nan  # The initial point shall be set by the caller.
+        hm = np.empty((max_iter, 2), dtype=np.float64)
+        hm[0] = H, M  # The initial point shall be set by the caller.
         idx = np.array([0], dtype=np.uint32)
         try:
             status = _solve(
-                hm_out=hmb[:, :2],
+                hm_out=hm,
                 idx_out=idx,
                 c_r=c_r,
                 M_s=M_s,
@@ -241,30 +135,29 @@ def solve(
             )
         except (FloatingPointError, ZeroDivisionError) as ex:
             status = "Too few points in the sweep" if idx[0] < 10 else ""
-            H, M, _ = hmb[idx[0]]
+            H, M = hm[idx[0]]
             _logger.warning("Sweep stopped at #%s, H=%+.3f, M=%+.3f due to numerical error: %s", idx[0], H, M, ex)
 
-        hmb = hmb[: idx[0] + 1]
-        hmb[:, 2] = mu_0 * (hmb[:, 0] + hmb[:, 1])
-        hmb.setflags(write=False)
-        H, M, _ = hmb[-1]
+        hm = hm[: idx[0] + 1]
+        hm.setflags(write=False)
+        H, M = hm[-1]
         if status:
             raise ConvergenceError(f"Convergence failure at #{idx[0]}, H={H:+.3f}, M={M:+.3f}: {status}")
-        return hmb
+        return hm
 
-    hmb_virgin = sweep_hmb(0, 0, +1)
+    hm_virgin = sweep(0, 0, +1)
 
-    H_last, M_last, _ = hmb_virgin[-1]
-    hmb_maj_dsc = sweep_hmb(H_last, M_last, -1)
+    H_last, M_last = hm_virgin[-1]
+    hm_maj_dsc = sweep(H_last, M_last, -1)
 
-    H_last, M_last, _ = hmb_maj_dsc[-1]
-    hmb_maj_asc = sweep_hmb(H_last, M_last, +1)
+    H_last, M_last = hm_maj_dsc[-1]
+    hm_maj_asc = sweep(H_last, M_last, +1)
 
-    major_loop = MajorLoop(descending=hmb_maj_dsc[::-1], ascending=hmb_maj_asc)
+    major_loop = HysteresisLoop(descending=hm_maj_dsc[::-1], ascending=hm_maj_asc)
     if not asymmetric_material:
         major_loop = major_loop.balance()
 
-    return Solution(virgin=hmb_virgin, major_loop=major_loop)
+    return Solution(virgin=hm_virgin, major_loop=major_loop)
 
 
 @njit(nogil=True)
@@ -361,7 +254,7 @@ def _langevin(x: float) -> float:
     L(x) = coth(x) - 1/x
     For tensors, the function is applied element-wise.
     """
-    if np.abs(x) < _EPSILON:  # For very small |x|, use the series expansion ~ x/3
+    if np.abs(x) < 1e-10:  # For very small |x|, use the series expansion ~ x/3
         return x / 3.0
     return 1.0 / np.tanh(x) - 1.0 / x  # type: ignore
 
@@ -372,7 +265,7 @@ def _dL_dx(x: float) -> float:
     Derivative of Langevin L(x) = coth(x) - 1/x.
     d/dx [coth(x) - 1/x] = -csch^2(x) + 1/x^2.
     """
-    if np.abs(x) < _EPSILON:  # series expansion of L(x) ~ x/3 -> derivative ~ 1/3 near zero
+    if np.abs(x) < 1e-10:  # series expansion of L(x) ~ x/3 -> derivative ~ 1/3 near zero
         return 1.0 / 3.0
     # exact expression: -csch^2(x) + 1/x^2
     # csch^2(x) = 1 / sinh^2(x)
