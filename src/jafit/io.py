@@ -68,7 +68,10 @@ def load(path_or_text: Path | str) -> HysteresisLoop:
             c = c[::-1]
         else:
             assert False, "Not supposed to get here by design; see the place of invocation"
-        c[:, 1] = c[:, 1] / mu_0 - c[:, 0]
+        # Note that we cannot simply do  c[:,1]=c[:,1]/mu_0-c[:,0]  because it damages the memory
+        c = np.column_stack((c[:, 0], c[:, 1] / mu_0 - c[:, 0]))
+        if np.abs(c).max() > 10e6:
+            _logger.warning("The loaded curve appears to be in the wrong units: values seem too large:\n%s", c)
         return c
 
     d = np.diff(m[:, 0])
