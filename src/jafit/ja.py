@@ -113,12 +113,12 @@ def solve(
     """
     c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
 
-    def sweep(H: float, M: float, sign: int) -> npt.NDArray[np.float64]:
+    def sweep(H0: float, M0: float, sign: int) -> npt.NDArray[np.float64]:
         assert sign in (-1, +1)
         # This is allocated from the virtual memory anyway, so we can afford to be generous.
         # No mapping to the physical memory is done until we actually attempt to write to the array.
         hm = np.empty((max_iter, 2), dtype=np.float64)
-        hm[0] = H, M  # The initial point shall be set by the caller.
+        hm[0] = H0, M0  # The initial point shall be set by the caller.
         idx = np.array([0], dtype=np.uint32)
         try:
             status = _solve(
@@ -147,7 +147,7 @@ def solve(
         H, M = hm[-1]
         if status:
             arrow = " ↑↓"[sign]
-            raise ConvergenceError(f"{arrow}#{idx[0]} H={H:+.3f} M={M:+.3f}: {status}")
+            raise ConvergenceError(f"{arrow}#{idx[0]} H0={H0:+.3f} H={H:+.3f} M0={M0:.3f} M={M:+.3f}: {status}")
         return hm
 
     hm_virgin = sweep(0, 0, +1)
@@ -195,18 +195,30 @@ def _solve(
     assert idx_out.shape == (1,)
     assert idx_out[0] == 0
 
+    # Dormand–Prince (RK45) constants for single dimension
+    C2, C3, C4, C5 = 1 / 5, 3 / 10, 4 / 5, 8 / 9
+    A21 = 1 / 5
+    A31, A32 = 3 / 40, 9 / 40
+    A41, A42, A43 = 44 / 45, -56 / 15, 32 / 9
+    A51, A52, A53, A54 = 19372 / 6561, -25360 / 2187, 64448 / 6561, -212 / 729
+    A61, A62, A63, A64, A65 = 9017 / 3168, -355 / 33, 46732 / 5247, 49 / 176, -5103 / 18656
+    # 5th-order weights
+    B1, B2, B3, B4, B5, B6 = 35 / 384, 0.0, 500 / 1113, 125 / 192, -2187 / 6784, 11 / 84
+    # 4th-order weights (for the embedded estimate)
+    B1_4, B2_4, B3_4, B4_4, B5_4, B6_4 = 5179 / 57600, 7571 / 16695, 393 / 640, -92097 / 339200, 187 / 2100, 1 / 40
+
     # Entities that are constant for the entire sweep.
     max_iter = hm_out.shape[0]
     df = lambda h, m: _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=h, M=m, direction=direction)
 
     # Entities that can be changed if the solver fails and has to retry.
     # The initial settings assume a non-stiff equation so that we can get a quick solution.
-    target_rel_err = 0.1  # Keep abs(err)/tolerance close to this value.
-    dH_abs_range = np.array([1e-6, 100], dtype=np.float64)
+    target_rel_err = 0.1  # Keep local_error/tolerance close to this value.
+    dH_abs_range = np.array([1e-6, 10], dtype=np.float64)
     retry_count = 0
 
     # Entities that are dynamically adjusted during the sweep.
-    dH_abs = 1e-4  # This is just a guess that will be dynamically refined.
+    dH_abs = 1e-3  # This is just a guess that will be dynamically refined.
 
     assert max_iter > 1
     assert np.isfinite(hm_out[0]).all()  # We require that the first point is already filled in.
@@ -214,22 +226,26 @@ def _solve(
         dH = direction * dH_abs
         H, M = hm_out[idx_out[0]]
 
-        # Integrate using a high-order Runge-Kutta method because the equation can be stiff at high susceptibility.
+        # Integrate using a high-order method because the equation can be stiff at high susceptibility.
         # _dM_dH() may throw FloatingPointError or ZeroDivisionError; we can't handle them in the compiled code.
         # Since we always update the current state in the caller's context, we can still return partial solution
         # even if an exception is raised.
-        # fmt: off
-        x_1 = df(   H              , M                     )
-        x_2 = df(   H + dH * 0.5   , M + x_1 * dH * 0.5    )
-        x_3 = df(   H + dH * 0.5   , M + x_2 * dH * 0.5    )
-        x_4 = df(   H + dH         , M + x_3 * dH          )
-        # fmt: on
+        k1 = df(H, M)
+        k2 = df(H + C2 * dH, M + dH * (A21 * k1))
+        k3 = df(H + C3 * dH, M + dH * (A31 * k1 + A32 * k2))
+        k4 = df(H + C4 * dH, M + dH * (A41 * k1 + A42 * k2 + A43 * k3))
+        k5 = df(H + C5 * dH, M + dH * (A51 * k1 + A52 * k2 + A53 * k3 + A54 * k4))
+        k6 = df(H + dH, M + dH * (A61 * k1 + A62 * k2 + A63 * k3 + A64 * k4 + A65 * k5))
 
+        M5 = M + dH * (B1 * k1 + B2 * k2 + B3 * k3 + B4 * k4 + B5 * k5 + B6 * k6)
+        M4 = M + dH * (B1_4 * k1 + B2_4 * k2 + B3_4 * k3 + B4_4 * k4 + B5_4 * k5 + B6_4 * k6)
+
+        err_local = np.abs(M5 - M4)
         H_new = H + dH
-        M_new = M + (x_1 + 2 * x_2 + 2 * x_3 + x_4) * dH / 6.0
+        M_new = M5
 
         # Compute the adjustment to the step size.
-        e = np.abs((M + x_1 * dH) - M_new) / tolerance
+        e = err_local / tolerance
         adj = min(max(target_rel_err / (e + 1e-9), 0.1), 1.01)
 
         # Adjust the step size keeping it within the allowed range.
@@ -239,7 +255,7 @@ def _solve(
         # Note that this equation can be quite stiff depending on the parameters, so merely taking a few steps
         # back is not enough: if the error went out of bounds, that means the divergence started many steps ago.
         if e > 1:
-            # Uh-oh, this is a stiff case. We need to reconfigure ourselves for a more careful approach.
+            # Uh-oh, this is a stiff case. Restart in finer steps.
             if retry_count == 0:
                 retry_count += 1
                 target_rel_err *= 0.01
