@@ -111,16 +111,17 @@ def solve(
     In that case, either the ``max_iter`` needs to be raised, or the tolerance needs to be relaxed.
     """
     c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
+    save_step = np.array([2, 2], dtype=np.float64)
 
     def sweep(H0: float, M0: float, sign: int) -> npt.NDArray[np.float64]:
         assert sign in (-1, +1)
-        # This is allocated from the virtual memory anyway, so we can afford to be generous.
-        # No mapping to the physical memory is done until we actually attempt to write to the array.
-        hm = np.empty((10**8, 2), dtype=np.float64)
-        hm[0] = H0, M0  # The initial point shall be set by the caller.
+        hm = np.empty((10**8, 2), dtype=np.float64)  # Empty is allocated from virtual memory unless written to.
         idx = np.array([0], dtype=np.uint32)
-        try:
-            status = _solve(
+
+        def try_once(target_rel_err: float, dH_abs_initial: float, dH_abs_range: tuple[float, float]) -> str:
+            hm[0] = H0, M0  # The initial point shall be set by the caller.
+            idx[0] = 0  # Reset the index to the initial point.
+            return _solve(
                 hm_out=hm,
                 idx_out=idx,
                 c_r=c_r,
@@ -130,11 +131,19 @@ def solve(
                 alpha=alpha,
                 direction=sign,
                 tolerance=tolerance,
+                max_rel_error=1e3,
+                target_rel_err=target_rel_err,
+                dH_abs_initial=dH_abs_initial,
+                dH_abs_range=dH_abs_range,
+                save_step=save_step,
                 saturation_susceptibility=saturation_susceptibility,
                 H_stop_range=H_stop_range,
             )
+
+        status = ""
+        try:
+            status = try_once(target_rel_err=0.1, dH_abs_initial=1e-6, dH_abs_range=(1e-8, 0.1))
         except (FloatingPointError, ZeroDivisionError) as ex:
-            status = "Too few points in the sweep" if idx[0] < 10 else ""
             H, M = hm[idx[0]]
             _logger.warning(
                 "Sweep stopped at #%s, H=%+.3f, M=%+.3f with %s due to numerical error: %s", idx[0], H, M, coef, ex
@@ -181,6 +190,11 @@ def _solve(
     alpha: float,
     direction: int,
     tolerance: float,
+    max_rel_error: float,
+    target_rel_err: float,
+    dH_abs_initial: float,
+    dH_abs_range: tuple[float, float],
+    save_step: npt.NDArray[np.float64],
     saturation_susceptibility: float,
     H_stop_range: tuple[float, float],
 ) -> str:
@@ -188,11 +202,19 @@ def _solve(
     This function is very bare-bones because it has to be compilable in the nopython mode.
     We can't handle exceptions, can't log, etc, just numerical stuff; the flip side is that it is super fast.
     The caller needs to jump through some extra hoops to use this function, but it is worth it.
+    This function is designed to be re-invoked with different parameters if the solver fails to converge.
     """
     assert direction in (-1, +1)
     assert len(hm_out.shape) == 2 and (hm_out.shape[1] == 2) and (hm_out.shape[0] > 1)
     assert idx_out.shape == (1,)
     assert idx_out[0] == 0
+    assert tolerance > 0
+    assert max_rel_error >= 1
+    assert 0 < target_rel_err < 1
+    assert 0 < dH_abs_range[0] < dH_abs_initial < dH_abs_range[1]
+    assert np.all(save_step > 0)
+
+    eps = np.finfo(np.float64).eps
 
     # Dormand–Prince (RK45) constants for single dimension
     C2, C3, C4, C5 = 1 / 5, 3 / 10, 4 / 5, 8 / 9
@@ -206,18 +228,8 @@ def _solve(
     # 4th-order weights (for the embedded estimate)
     B1_4, B2_4, B3_4, B4_4, B5_4, B6_4 = 5179 / 57600, 7571 / 16695, 393 / 640, -92097 / 339200, 187 / 2100, 1 / 40
 
-    # Entities that are constant for the entire solution.
-    save_step = 1.0  # When either variable changes by at least this much, save the new data point.
     df = lambda h, m: _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=h, M=m, direction=direction)
-
-    # Entities that can be changed if the solver fails and has to retry.
-    # The initial settings assume a non-stiff equation so that we can get a quick solution.
-    target_rel_err = 0.1  # Keep local_error/tolerance close to this value.
-    dH_abs_range = np.array([1e-6, 1], dtype=np.float64)
-    retry_count = 0
-
-    # Entities that are changed during the sweep.
-    dH_abs = 1e-3  # This is just a guess that will be dynamically refined.
+    dH_abs = dH_abs_initial
     assert np.isfinite(hm_out[0]).all()  # We require that the first point is already filled in.
     H, M = hm_out[0]
     while True:
@@ -247,39 +259,34 @@ def _solve(
         # Adjust the step size keeping it within the allowed range.
         dH_abs = min(max(dH_abs * adj, float(dH_abs_range[0])), float(dH_abs_range[1]))
 
-        # If the error still exceeds the requested tolerance, adjust the settings and retry.
-        # Note that this equation can be quite stiff depending on the parameters, so merely taking a few steps
+        # This equation can be quite stiff depending on the parameters, so merely taking a few steps
         # back is not enough: if the error went out of bounds, that means the divergence started many steps ago.
-        if e > 1:
-            # Uh-oh, this is a stiff case. Restart in finer steps.
-            if retry_count == 0:
-                retry_count += 1
-                target_rel_err *= 0.01
-                dH_abs_range *= 0.01
-                idx_out[0] = 0  # Nuke everything and begin again.
-                H, M = hm_out[0]
-                continue
-            # If we're already at the limit, accept a very large error and hope for the best.
-            if e > 100:
-                return "Error too large"
+        assert e >= 0
+        if e > 1 and abs(dH) > (dH_abs_range[0] + eps):
+            continue  # We try it anyway a few times because it's very cheap.
+        if e > max_rel_error:
+            return "Error too large"
 
+        # Termination check and logging. No need to log the termination reason because it is inferrable from the output.
+        # noinspection PyTypeChecker
+        chi = abs((M_new - M) / (H_new - H)) if abs(H_new - H) > 1e-10 else np.inf
+        if H * direction >= H_stop_range[0] and chi < saturation_susceptibility:
+            break
+        if H * direction > H_stop_range[1]:
+            break
+
+        H, M = H_new, M_new
         # Save the data point. The caller will get partial results even if an exception is raised.
-        if np.abs(np.array([H, M]) - hm_out[idx_out[0]]).max() > save_step:
+        if np.any(np.abs(np.array([H, M]) - hm_out[idx_out[0]]) > save_step):
             idx_out[0] += 1
             if idx_out[0] < len(hm_out):
                 hm_out[idx_out[0]] = H_new, M_new
             else:
                 return "Not enough storage space"
 
-        # Termination check and logging. No need to log the termination reason because it is inferrable from the output.
-        # noinspection PyTypeChecker
-        chi = abs((M_new - M) / (H_new - H)) if abs(H_new - H) > 1e-10 else np.inf
-        if H * direction >= H_stop_range[0] and chi < saturation_susceptibility:
-            return ""
-        if H * direction > H_stop_range[1]:
-            return ""
-
-        H, M = H_new, M_new
+    if idx_out[0] < len(hm_out):
+        hm_out[idx_out[0]] = H, M  # Save the last point.
+    return ""
 
 
 @njit(nogil=True)

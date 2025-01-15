@@ -75,13 +75,13 @@ def do_fit(
     coef = Coef(
         c_r=_perhaps(c_r, 1e-6),
         M_s=_perhaps(M_s, M_s_min * 1.001),  # Optimizers tend to be unstable if parameters are too close to the bounds
-        a=_perhaps(a, 1e4),
-        k_p=_perhaps(k_p, 1e4),
-        alpha=_perhaps(alpha, 0.1),
+        a=_perhaps(a, 1e3),
+        k_p=_perhaps(k_p, 1e3),
+        alpha=_perhaps(alpha, 0.001),
     )
-    x_min = Coef(c_r=0, M_s=M_s_min, a=0, k_p=0, alpha=0)
+    x_min = Coef(c_r=0, M_s=M_s_min, a=1, k_p=1, alpha=1e-10)
     # TODO: better way of setting the upper bounds?
-    x_max = Coef(c_r=1, M_s=3e6, a=1e5, k_p=1e5, alpha=1)
+    x_max = Coef(c_r=0.999, M_s=3e6, a=2e3, k_p=3e4, alpha=0.03)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
 
     # Ensure the swept H-range is large enough.
