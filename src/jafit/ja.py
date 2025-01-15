@@ -89,7 +89,6 @@ def solve(
     tolerance: float = 1e-3,
     saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
-    max_iter: int = 10**9,
     no_balancing: bool = False,
 ) -> Solution:
     """
@@ -117,7 +116,7 @@ def solve(
         assert sign in (-1, +1)
         # This is allocated from the virtual memory anyway, so we can afford to be generous.
         # No mapping to the physical memory is done until we actually attempt to write to the array.
-        hm = np.empty((max_iter, 2), dtype=np.float64)
+        hm = np.empty((10**8, 2), dtype=np.float64)
         hm[0] = H0, M0  # The initial point shall be set by the caller.
         idx = np.array([0], dtype=np.uint32)
         try:
@@ -191,7 +190,7 @@ def _solve(
     The caller needs to jump through some extra hoops to use this function, but it is worth it.
     """
     assert direction in (-1, +1)
-    assert len(hm_out.shape) == 2 and (hm_out.shape[1] == 2)
+    assert len(hm_out.shape) == 2 and (hm_out.shape[1] == 2) and (hm_out.shape[0] > 1)
     assert idx_out.shape == (1,)
     assert idx_out[0] == 0
 
@@ -207,24 +206,22 @@ def _solve(
     # 4th-order weights (for the embedded estimate)
     B1_4, B2_4, B3_4, B4_4, B5_4, B6_4 = 5179 / 57600, 7571 / 16695, 393 / 640, -92097 / 339200, 187 / 2100, 1 / 40
 
-    # Entities that are constant for the entire sweep.
-    max_iter = hm_out.shape[0]
+    # Entities that are constant for the entire solution.
+    save_step = 1.0  # When either variable changes by at least this much, save the new data point.
     df = lambda h, m: _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=h, M=m, direction=direction)
 
     # Entities that can be changed if the solver fails and has to retry.
     # The initial settings assume a non-stiff equation so that we can get a quick solution.
     target_rel_err = 0.1  # Keep local_error/tolerance close to this value.
-    dH_abs_range = np.array([1e-6, 10], dtype=np.float64)
+    dH_abs_range = np.array([1e-6, 1], dtype=np.float64)
     retry_count = 0
 
-    # Entities that are dynamically adjusted during the sweep.
+    # Entities that are changed during the sweep.
     dH_abs = 1e-3  # This is just a guess that will be dynamically refined.
-
-    assert max_iter > 1
     assert np.isfinite(hm_out[0]).all()  # We require that the first point is already filled in.
-    while idx_out[0] < (max_iter - 1):
+    H, M = hm_out[0]
+    while True:
         dH = direction * dH_abs
-        H, M = hm_out[idx_out[0]]
 
         # Integrate using a high-order method because the equation can be stiff at high susceptibility.
         # _dM_dH() may throw FloatingPointError or ZeroDivisionError; we can't handle them in the compiled code.
@@ -241,8 +238,7 @@ def _solve(
         M4 = M + dH * (B1_4 * k1 + B2_4 * k2 + B3_4 * k3 + B4_4 * k4 + B5_4 * k5 + B6_4 * k6)
 
         err_local = np.abs(M5 - M4)
-        H_new = H + dH
-        M_new = M5
+        H_new, M_new = H + dH, M5
 
         # Compute the adjustment to the step size.
         e = err_local / tolerance
@@ -261,26 +257,29 @@ def _solve(
                 target_rel_err *= 0.01
                 dH_abs_range *= 0.01
                 idx_out[0] = 0  # Nuke everything and begin again.
+                H, M = hm_out[0]
                 continue
             # If we're already at the limit, accept a very large error and hope for the best.
             if e > 100:
                 return "Error too large"
 
-        # Save the next point. This ensures that the caller will get partial results even if an exception is raised.
-        idx = idx_out[0] + 1
-        idx_out[0] = idx
-        hm_out[idx] = H_new, M_new
+        # Save the data point. The caller will get partial results even if an exception is raised.
+        if np.abs(np.array([H, M]) - hm_out[idx_out[0]]).max() > save_step:
+            idx_out[0] += 1
+            if idx_out[0] < len(hm_out):
+                hm_out[idx_out[0]] = H_new, M_new
+            else:
+                return "Not enough storage space"
 
         # Termination check and logging. No need to log the termination reason because it is inferrable from the output.
-        assert idx >= 1
         # noinspection PyTypeChecker
-        chi = np.abs((hm_out[idx][1] - hm_out[idx - 1][1]) / max(hm_out[idx][0] - hm_out[idx - 1][0], 1e-9))
+        chi = abs((M_new - M) / (H_new - H)) if abs(H_new - H) > 1e-10 else np.inf
         if H * direction >= H_stop_range[0] and chi < saturation_susceptibility:
             return ""
         if H * direction > H_stop_range[1]:
             return ""
 
-    return "Maximum number of iterations reached"
+        H, M = H_new, M_new
 
 
 @njit(nogil=True)
