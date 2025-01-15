@@ -50,7 +50,7 @@ def magnetization(ref: HysteresisLoop, sol: HysteresisLoop, *, lattice_size: int
     def loss(hm_ref: npt.NDArray[np.float64], hm_sol: npt.NDArray[np.float64]) -> float:
         M_ref = np.interp(H_lattice, hm_ref[:, 0], hm_ref[:, 1])
         M_sol = np.interp(H_lattice, hm_sol[:, 0], hm_sol[:, 1])
-        return np.sqrt(np.mean((M_ref - M_sol) ** 2))
+        return float(np.sqrt(np.mean((M_ref - M_sol) ** 2)))
 
     loss_values = []
     if len(ref.descending) and len(sol.descending):
