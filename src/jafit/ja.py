@@ -111,7 +111,7 @@ def solve(
     In that case, either the ``max_iter`` needs to be raised, or the tolerance needs to be relaxed.
     """
     c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
-    save_step = np.array([2, 2], dtype=np.float64)
+    save_step = np.array([3, 3], dtype=np.float64)
 
     def sweep(H0: float, M0: float, sign: int) -> npt.NDArray[np.float64]:
         assert sign in (-1, +1)
@@ -142,7 +142,7 @@ def solve(
 
         status = ""
         try:
-            status = try_once(target_rel_err=0.1, dH_abs_initial=1e-6, dH_abs_range=(1e-8, 0.1))
+            status = try_once(target_rel_err=0.01, dH_abs_initial=1e-6, dH_abs_range=(1e-8, 1.0))
         except (FloatingPointError, ZeroDivisionError) as ex:
             H, M = hm[idx[0]]
             _logger.warning(
