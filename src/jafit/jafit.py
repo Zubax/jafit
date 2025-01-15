@@ -104,7 +104,6 @@ def do_fit(
             obj_fn=make_objective_function(
                 ref,
                 loss.demag_key_points,
-                tolerance=1.0,  # This is a very rough approximation
                 H_stop_range=H_stop_range,
                 stop_loss=1e-3,  # Fine adjustment is meaningless because the solver and the loss fun are crude here
                 stop_evals=max_evaluations_per_stage,
@@ -124,7 +123,6 @@ def do_fit(
             obj_fn=make_objective_function(
                 ref,
                 loss.nearest,
-                tolerance=0.01,
                 H_stop_range=H_stop_range,
                 stop_evals=max_evaluations_per_stage,
                 cb_on_best=make_on_best_callback("global", ref),
@@ -140,7 +138,6 @@ def do_fit(
         obj_fn=make_objective_function(
             ref,
             loss.nearest,
-            tolerance=1e-4,
             H_stop_range=H_stop_range,
             stop_evals=max_evaluations_per_stage,
             cb_on_best=make_on_best_callback("local", ref),
@@ -288,7 +285,7 @@ def _setup_logging() -> None:
 
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-3.3s %(name)s: %(message)s"))
+    console_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-3.3s %(name)s: %(message)s", "%H:%M:%S"))
     logging.getLogger().addHandler(console_handler)
 
     file_handler = logging.FileHandler("jafit.log", mode="w", encoding="utf-8")

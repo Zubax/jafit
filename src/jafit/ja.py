@@ -5,6 +5,7 @@ Jiles-Atherton solver.
 """
 
 from __future__ import annotations
+from typing import Any
 from logging import getLogger
 import dataclasses
 import numpy as np
@@ -85,7 +86,7 @@ class Solution:
 def solve(
     coef: Coef,
     *,
-    tolerance: float = 1e-4,
+    tolerance: float = 1e-3,
     saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
     max_iter: int = 10**9,
@@ -145,7 +146,8 @@ def solve(
         hm.setflags(write=False)
         H, M = hm[-1]
         if status:
-            raise ConvergenceError(f"Convergence failure at #{idx[0]} with {coef}, H={H:+.3f}, M={M:+.3f}: {status}")
+            arrow = " ↑↓"[sign]
+            raise ConvergenceError(f"{arrow}#{idx[0]} H={H:+.3f} M={M:+.3f}: {status}")
         return hm
 
     hm_virgin = sweep(0, 0, +1)
@@ -193,39 +195,70 @@ def _solve(
     assert idx_out.shape == (1,)
     assert idx_out[0] == 0
 
-    dH_abs = 0.01  # This is just a guess that will be dynamically refined.
+    # Entities that are constant for the entire sweep.
     max_iter = hm_out.shape[0]
+    df = lambda h, m: _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=h, M=m, direction=direction)
+
+    # Entities that can be changed if the solver fails and has to retry.
+    # The initial settings assume a non-stiff equation so that we can get a quick solution.
+    target_rel_err = 0.1  # Keep abs(err)/tolerance close to this value.
+    dH_abs_range = np.array([1e-6, 100], dtype=np.float64)
+    retry_count = 0
+
+    # Entities that are dynamically adjusted during the sweep.
+    dH_abs = 1e-3  # This is just a guess that will be dynamically refined.
+
     assert max_iter > 1
     assert np.isfinite(hm_out[0]).all()  # We require that the first point is already filled in.
     while idx_out[0] < (max_iter - 1):
         dH = direction * dH_abs
         H, M = hm_out[idx_out[0]]
 
-        # Integrate using Heun's method (instead of Euler's) for better stability.
+        # Integrate using a high-order Runge-Kutta method because the equation can be stiff at high susceptibility.
         # _dM_dH() may throw FloatingPointError or ZeroDivisionError; we can't handle them in the compiled code.
         # Since we always update the current state in the caller's context, we can still return partial solution
         # even if an exception is raised.
-        dM_dH_1 = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=H, M=M, direction=direction)
-        M_1 = M + dM_dH_1 * dH
-        dM_dH_2 = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=H + dH, M=M_1, direction=direction)
-        M_2 = M + 0.5 * (dM_dH_1 + dM_dH_2) * dH
+        # fmt: off
+        x_1 = df(   H              , M                     )
+        x_2 = df(   H + dH * 0.5   , M + x_1 * dH * 0.5    )
+        x_3 = df(   H + dH * 0.5   , M + x_2 * dH * 0.5    )
+        x_4 = df(   H + dH         , M + x_3 * dH          )
+        # fmt: on
 
-        # Check if the tolerance is acceptable, only accept the data point if it is; otherwise refine and retry.
-        if np.abs(M_1 - M_2) > tolerance:
-            dH_abs *= 0.5
-            if dH_abs < 1e-8:
-                return "Convergence failure: error still large at the smallest step size"
-            continue
+        H_new = H + dH
+        M_new = M + (x_1 + 2 * x_2 + 2 * x_3 + x_4) * dH / 6.0
+
+        # Compute the adjustment to the step size.
+        e = np.abs((M + x_1 * dH) - M_new) / tolerance
+        adj = min(max(target_rel_err / (e + 1e-9), 0.1), 1.01)
+
+        # Adjust the step size keeping it within the allowed range.
+        dH_abs = min(max(dH_abs * adj, float(dH_abs_range[0])), float(dH_abs_range[1]))
+
+        # If the error still exceeds the requested tolerance, adjust the settings and retry.
+        # Note that this equation can be quite stiff depending on the parameters, so merely taking a few steps
+        # back is not enough: if the error went out of bounds, that means the divergence started many steps ago.
+        if e > 1:
+            # Uh-oh, this is a stiff case. We need to reconfigure ourselves for a more careful approach.
+            if retry_count == 0:
+                retry_count += 1
+                target_rel_err *= 0.01
+                dH_abs_range *= 0.01
+                idx_out[0] = 0  # Nuke everything and begin again.
+                continue
+            # If we're already at the limit, accept a very large error and hope for the best.
+            if e > 100:
+                return "Error too large"
 
         # Save the next point. This ensures that the caller will get partial results even if an exception is raised.
         idx = idx_out[0] + 1
         idx_out[0] = idx
-        dH_abs = min(dH_abs * 1.1, 1e3)
-        hm_out[idx] = H + dH, M_2
+        hm_out[idx] = H_new, M_new
 
-        # Termination check and logging. It is guaranteed that we have at least two points now.
-        # No need to log the termination reason here because it is easily inferrable from the output.
-        chi = np.abs((hm_out[idx][1] - hm_out[idx - 1][1]) / (hm_out[idx][0] - hm_out[idx - 1][0]))
+        # Termination check and logging. No need to log the termination reason because it is inferrable from the output.
+        assert idx >= 1
+        # noinspection PyTypeChecker
+        chi = np.abs((hm_out[idx][1] - hm_out[idx - 1][1]) / max(hm_out[idx][0] - hm_out[idx - 1][0], 1e-9))
         if H * direction >= H_stop_range[0] and chi < saturation_susceptibility:
             return ""
         if H * direction > H_stop_range[1]:

@@ -35,7 +35,6 @@ def make_objective_function(
     ref: HysteresisLoop,
     loss_fun: LossFunction,
     *,
-    tolerance: float,
     H_stop_range: tuple[float, float],
     decimate_solution_to: int = 10_000,
     stop_loss: float = -np.inf,
@@ -49,24 +48,32 @@ def make_objective_function(
         nonlocal epoch, best_loss
         sol: Solution | None = None
         started_at = time.monotonic()
+        elapsed_loss = 0.0
         try:
-            sol = solve(c, tolerance=tolerance, H_stop_range=H_stop_range)
+            sol = solve(c, H_stop_range=H_stop_range)
         except SolverError as ex:
-            _logger.info("Solver error: %s: %s", type(ex).__name__, ex)
+            error = f"{type(ex).__name__}: {ex}"
             loss = np.inf
         else:
+            error = ""
+            loss_started_at = time.monotonic()
             loss = loss_fun(ref, sol.loop.decimate(decimate_solution_to))
+            elapsed_loss = time.monotonic() - loss_started_at
         elapsed = time.monotonic() - started_at
         is_best = loss < best_loss
         best_loss = loss if is_best else best_loss
-        (_logger.info if is_best else _logger.debug)(
-            "Solution #%05d: %s loss=%.6f, tolerance=%f, elapsed=%.0fms",
-            epoch,
-            c,
-            loss,
-            tolerance,
-            elapsed * 1e3,
-        )
+        if error:
+            _logger.warning("Solution #%05d: %s t=%.3f; error: %s", epoch, c, elapsed, error)
+        else:
+            (_logger.info if is_best else _logger.debug)(
+                "Solution #%05d: %s t=%.3f loss=%.6f t_loss=%.3f pts=%.0fk",
+                epoch,
+                c,
+                elapsed,
+                loss,
+                elapsed_loss,
+                (len(sol.loop.descending) + len(sol.loop.ascending)) * 1e-3 if sol else 0,
+            )
         if is_best and cb_on_best is not None and sol:
             cb_on_best(epoch, loss, c, sol)
         epoch += 1
