@@ -206,7 +206,7 @@ def _solve(
     retry_count = 0
 
     # Entities that are dynamically adjusted during the sweep.
-    dH_abs = 1e-3  # This is just a guess that will be dynamically refined.
+    dH_abs = 1e-4  # This is just a guess that will be dynamically refined.
 
     assert max_iter > 1
     assert np.isfinite(hm_out[0]).all()  # We require that the first point is already filled in.

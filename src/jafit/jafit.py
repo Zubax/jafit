@@ -105,7 +105,7 @@ def do_fit(
                 ref,
                 loss.demag_key_points,
                 H_stop_range=H_stop_range,
-                stop_loss=1e-3,  # Fine adjustment is meaningless because the solver and the loss fun are crude here
+                stop_loss=1e-3,  # Fine adjustment is meaningless the loss fun is crude here.
                 stop_evals=max_evaluations_per_stage,
                 cb_on_best=make_on_best_callback("initial", ref),
             ),
