@@ -47,12 +47,15 @@ def make_objective_function(
     """
     WARNING: cb_on_best() may be invoked from a different thread concurrently!.
     """
-    mutex = threading.Lock()
-    epoch = 0
-    best_loss = np.inf
+    g_mutex = threading.Lock()
+    g_epoch = 0
+    g_best_loss = np.inf
 
     def obj_fn(c: Coef) -> ObjectiveFunctionResult:
-        nonlocal epoch, best_loss
+        nonlocal g_epoch, g_best_loss
+        with g_mutex:
+            this_epoch = g_epoch
+            g_epoch += 1
 
         sol: Solution | None = None
         started_at = time.monotonic()
@@ -69,27 +72,25 @@ def make_objective_function(
             elapsed_loss = time.monotonic() - loss_started_at
         elapsed = time.monotonic() - started_at
 
-        with mutex:
-            is_best = loss < best_loss
-            best_loss = loss if is_best else best_loss
-            if error:
-                _logger.warning("Solution #%05d: %s t=%.3f; error: %s", epoch, c, elapsed, error)
-            else:
-                (_logger.info if is_best else _logger.debug)(
-                    "Solution #%05d: %s t=%.3f loss=%.6f t_loss=%.3f pts=%.0fk",
-                    epoch,
-                    c,
-                    elapsed,
-                    loss,
-                    elapsed_loss,
-                    (len(sol.loop.descending) + len(sol.loop.ascending)) * 1e-3 if sol else 0,
-                )
-            this_epoch = epoch
-            epoch += 1
+        with g_mutex:
+            is_best = loss < g_best_loss
+            g_best_loss = loss if is_best else g_best_loss
 
+        if error:
+            _logger.warning("Solution #%05d: %s t=%.3f; error: %s", this_epoch, c, elapsed, error)
+        else:
+            (_logger.info if is_best else _logger.debug)(
+                "Solution #%05d: %s t=%.3f loss=%.6f t_loss=%.3f pts=%.0fk",
+                this_epoch,
+                c,
+                elapsed,
+                loss,
+                elapsed_loss,
+                (len(sol.loop.descending) + len(sol.loop.ascending)) * 1e-3 if sol else 0,
+            )
         if is_best and cb_on_best is not None and sol:
             cb_on_best(this_epoch, loss, c, sol)
-        return ObjectiveFunctionResult(loss=loss, done=loss < stop_loss or epoch >= stop_evals)
+        return ObjectiveFunctionResult(loss=loss, done=loss < stop_loss or this_epoch >= stop_evals)
 
     return obj_fn
 
@@ -109,7 +110,7 @@ def fit_global(
 
     n_workers = int(os.cpu_count() * 0.8)
     if n_workers < 1:
-        raise RuntimeError(f"Insufficient number of CPU cores: {os.cpu_count()} cores => {n_workers=}")
+        raise RuntimeError(f"Insufficient number of CPU cores: {os.cpu_count()} cores => {n_workers} workers")
     executor = ThreadPoolExecutor(max_workers=n_workers)
 
     def obj_fn_proxy(x: npt.NDArray[np.float64]) -> float:
@@ -134,9 +135,9 @@ def fit_global(
             obj_fn_proxy,
             [(lo, hi) for lo, hi in zip(v_min, v_max)],
             x0=v_0,
-            mutation=(0.5, 1.5),
+            mutation=(0.5, 1.9),
             recombination=0.7,
-            popsize=20,
+            popsize=30,
             maxiter=10**6,
             tol=tolerance or 0.01,
             callback=cb,
