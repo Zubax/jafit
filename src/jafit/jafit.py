@@ -35,6 +35,7 @@ T = TypeVar("T")
 def make_on_best_callback(file_name_prefix: str, ref: HysteresisLoop) -> Callable[[int, float, Coef, Solution], None]:
 
     def cb(epoch: int, loss_value: float, coef: Coef, sol: Solution) -> None:
+        # Keep in mind that this callback itself may be invoked from a different thread.
         def bg() -> None:
             try:
                 started_at = time.monotonic()
