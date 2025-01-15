@@ -131,7 +131,7 @@ def solve(
                 alpha=alpha,
                 direction=sign,
                 tolerance=tolerance,
-                max_rel_error=1e3,
+                max_rel_error=100,
                 target_rel_err=target_rel_err,
                 dH_abs_initial=dH_abs_initial,
                 dH_abs_range=dH_abs_range,
@@ -254,7 +254,7 @@ def _solve(
 
         # Compute the adjustment to the step size.
         e = err_local / tolerance
-        adj = min(max(target_rel_err / (e + 1e-9), 0.1), 1.01)
+        adj = min(max(target_rel_err / (e + 1e-9), 0.01), 1.01)
 
         # Adjust the step size keeping it within the allowed range.
         dH_abs = min(max(dH_abs * adj, float(dH_abs_range[0])), float(dH_abs_range[1]))
