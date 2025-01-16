@@ -47,8 +47,7 @@ def make_on_best_callback(file_name_prefix: str, ref: HysteresisLoop) -> Callabl
                 _logger.debug("Failed to plot: %s", ex, exc_info=True)
 
         # Plotting can take a while, so we do it in a background thread.
-        # We do release the GIL in the solver very often, so this is not a problem.
-        # Also, future Python versions will eventually have proper support for multithreading.
+        # The plotting backend will release the GIL.
         BG_EXECUTOR.submit(bg)
 
     return cb

@@ -237,7 +237,7 @@ def _sweep(
     return hm[:idx]
 
 
-@njit(nogil=True)
+@njit
 def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, direction: int) -> float:
     # noinspection PyTypeChecker,PyShadowingNames
     """
@@ -259,7 +259,7 @@ def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float,
     return (c_r * dM_an_dH_e + (1 - c_r) * dM_irr_dH) / (1 - alpha * c_r)  # type: ignore
 
 
-@njit(nogil=True)
+@njit
 def _langevin(x: float) -> float:
     """
     L(x) = coth(x) - 1/x
@@ -270,7 +270,7 @@ def _langevin(x: float) -> float:
     return 1.0 / np.tanh(x) - 1.0 / x  # type: ignore
 
 
-@njit(nogil=True)
+@njit
 def _dL_dx(x: float) -> float:
     """
     Derivative of Langevin L(x) = coth(x) - 1/x.
