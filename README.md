@@ -67,8 +67,7 @@ note the predicted $H_c$, $B_r$, and $BH_\text{max}$, and compare them against t
 jafit c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 ```
 
-<img src="validation/H(t),M(t),B(t) c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007.png" width="300px" alt="">  
-<img src="validation/hysteresis c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007.png" width="300px" alt="">
+<img src="validation/H(t),M(t),B(t) c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007.png" width="400px" alt=""><img src="validation/hysteresis c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007.png" width="400px" alt="">
 
 ### Specimen B
 
@@ -76,6 +75,12 @@ jafit c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 jafit c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001
 ```
 
-<img src="validation/H(t),M(t),B(t) c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="300px" alt="">  
-<img src="validation/hysteresis c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="300px" alt="">  
-<img src="validation/hysteresis c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001 zoomout.png" width="300px" alt="">
+<img src="validation/H(t),M(t),B(t) c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="400px" alt=""><img src="validation/hysteresis c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="400px" alt="">
+
+# Specimen C
+
+```shell
+jafit c_r=0.5 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001
+```
+
+<img src="validation/hysteresis c_r=0.5 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="400px" alt="">  
