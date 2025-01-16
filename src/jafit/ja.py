@@ -254,7 +254,7 @@ def _langevin(x: float) -> float:
     L(x) = coth(x) - 1/x
     For tensors, the function is applied element-wise.
     """
-    if np.abs(x) < 1e-5:  # For very small |x|, use the series expansion ~ x/3
+    if np.abs(x) < 1e-4:  # For very small |x|, use the series expansion ~ x/3
         return x / 3.0
     return 1.0 / np.tanh(x) - 1.0 / x  # type: ignore
 
@@ -266,7 +266,7 @@ def _dL_dx(x: float) -> float:
     d/dx [coth(x) - 1/x] = -csch^2(x) + 1/x^2.
     """
     # Danger! The small-value threshold has to be large here because the subsequent full form is very sensitive!
-    if np.abs(x) < 1e-5:  # series expansion of L(x) ~ x/3 -> derivative ~ 1/3 near zero
+    if np.abs(x) < 1e-4:  # series expansion of L(x) ~ x/3 -> derivative ~ 1/3 near zero
         return 1.0 / 3.0
     # exact expression: -csch^2(x) + 1/x^2
     # csch^2(x) = 1 / sinh^2(x)
