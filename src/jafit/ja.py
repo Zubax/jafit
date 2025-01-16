@@ -49,7 +49,7 @@ class Coef:
         def non_negative(x: float) -> bool:
             return x >= 0 and np.isfinite(x)
 
-        if not 0 <= self.c_r <= 1:
+        if not 0 < self.c_r <= 1:
             raise ValueError(f"c_r invalid: {self.c_r}")
         if not non_negative(self.M_s):
             raise ValueError(f"M_s invalid: {self.M_s}")
@@ -59,6 +59,8 @@ class Coef:
             raise ValueError(f"k_p invalid: {self.k_p}")
         if not non_negative(self.alpha):
             raise ValueError(f"alpha invalid: {self.alpha}")
+        if self.c_r * self.alpha >= (1 - 1e-12):
+            raise ValueError(f"The product of c_r and alpha cannot approach 1.0: {self}")
 
     def __str__(self) -> str:
         return (
@@ -190,7 +192,7 @@ def _sweep(
         H0,
         np.array([M0], dtype=np.float64),
         t_bound=H_stop_range[1] * sign,
-        max_step=(1e2, 1e3, 1e4)[coarseness],
+        max_step=(1e2, 1e3, 1e3)[coarseness],
         rtol=(0.001, 0.01, 1.0)[coarseness],  # Takes precedence at strong magnetization
         atol=(0.1, 1.0, 1000)[coarseness],  # Takes precedence at weak magnetization
     )
