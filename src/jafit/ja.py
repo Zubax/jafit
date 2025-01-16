@@ -93,12 +93,16 @@ class Solution:
     loop: HysteresisLoop
 
 
+MAX_COARSENESS = 2
+
+
 def solve(
     coef: Coef,
     *,
     saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
     no_balancing: bool = False,
+    coarseness: int = 0,
 ) -> Solution:
     """
     Solves the JA model for the given coefficients by sweeping the magnetization in the specified direction
@@ -112,65 +116,36 @@ def solve(
     The saturation will not be detected unless the H-field magnitude is at least ```H_stop_range[0]```;
     this is done to handle materials that exhibit very low susceptibility at weak fields.
     """
-    c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
 
-    def sweep(H0: float, M0: float, sign: int) -> npt.NDArray[np.float64]:
-        assert sign in (-1, +1)
+    def do_sweep(H0: float, M0: float, sign: int) -> npt.NDArray[np.float64]:
+        def once() -> npt.NDArray[np.float64]:
+            return _sweep(
+                coef,
+                H0=H0,
+                M0=M0,
+                sign=sign,
+                saturation_susceptibility=saturation_susceptibility,
+                H_stop_range=H_stop_range,
+                coarseness=crs,
+            )
 
-        def rhs(x: float, y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
-            z = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=x, M=float(y[0]), direction=sign)
-            return np.array([z], dtype=np.float64)
-
-        # Initially, I tried solving this equation using explicit methods, specifically RK4 and Dormand-Prince (RK45)
-        # (see the git history for details).
-        # However, the equation can be quite stiff at certain coefficients that do occur in practice with some softer
-        # materials, like certain AlNiCo grades, which causes explicit solvers to diverge even at very fine steps.
-        # Hence, it appears to be necessary to employ implicit methods.
-        # noinspection PyUnresolvedReferences
-        solver = scipy.integrate.BDF(
-            rhs,
-            H0,
-            np.array([M0], dtype=np.float64),
-            t_bound=H_stop_range[1] * sign,
-            max_step=1e2,
-            rtol=1e-3,
-            atol=1e-3,
-        )
-        hm = np.empty((10**8, 2), dtype=np.float64)
-        hm[0] = H0, M0
-        idx = 1
-        while solver.status == "running":
-            H_old, M_old = solver.t, solver.y[0]
+        crs = coarseness
+        while True:
             try:
-                msg = solver.step()
-            except (ZeroDivisionError, FloatingPointError) as ex:
-                msg = f"#{idx*sign:+d} {H0=} {M0=} H={H_old} M={M_old}: {type(ex).__name__}: {ex}"
-                if idx < 10:
-                    raise NumericalError(msg) from ex
-                _logger.warning("Stopping the sweep early: %s", msg)
-                _logger.debug("Stack trace for the above error", exc_info=True)
-                break
-            if solver.status not in ("running", "finished"):
-                raise NumericalError(
-                    f"#{idx*sign:+06d} {H0=:+012.3f} {M0=:+012.3f} H={H_old:+012.3f} M={M_old:+012.3f}: {msg}"
-                )
-            H_new, M_new = solver.t, solver.y[0]
-            hm[idx] = H_new, M_new
-            idx += 1
-            # Terminate sweep early if the material is already saturated.
-            chi = abs((M_new - M_old) / (H_new - H_old)) if abs(H_new - H_old) > 1e-10 else np.inf
-            if H_new * sign >= H_stop_range[0] and chi < saturation_susceptibility:
-                break
+                return once()
+            except ConvergenceError as ex:
+                if crs >= MAX_COARSENESS:
+                    raise
+                crs += 1
+                _logger.debug("Retrying the sweep with coarseness %d due to %s: %s", crs, type(ex).__name__, ex)
 
-        return hm[:idx]
-
-    hm_virgin = sweep(0, 0, +1)
+    hm_virgin = do_sweep(0, 0, +1)
 
     H_last, M_last = hm_virgin[-1]
-    hm_maj_dsc = sweep(H_last, M_last, -1)
+    hm_maj_dsc = do_sweep(H_last, M_last, -1)
 
     H_last, M_last = hm_maj_dsc[-1]
-    hm_maj_asc = sweep(H_last, M_last, +1)
+    hm_maj_asc = do_sweep(H_last, M_last, +1)
 
     loop = HysteresisLoop(descending=hm_maj_dsc[::-1], ascending=hm_maj_asc)
     assert loop.descending[0, 0] < loop.descending[-1, 0]
@@ -183,6 +158,69 @@ def solve(
         loop = loop.balance()
 
     return Solution(virgin=hm_virgin, loop=loop)
+
+
+def _sweep(
+    coef: Coef,
+    *,
+    H0: float,
+    M0: float,
+    sign: int,
+    saturation_susceptibility: float,
+    H_stop_range: tuple[float, float],
+    coarseness: int,
+) -> npt.NDArray[np.float64]:
+    assert sign in (-1, +1)
+    if not (0 <= coarseness <= MAX_COARSENESS):
+        raise ValueError(f"Invalid coarseness: {coarseness}")
+    c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
+
+    def rhs(x: float, y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        z = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=x, M=float(y[0]), direction=sign)
+        return np.array([z], dtype=np.float64)
+
+    # Initially, I tried solving this equation using explicit methods, specifically RK4 and Dormand-Prince (RK45)
+    # (see the git history for details).
+    # However, the equation can be quite stiff at certain coefficients that do occur in practice with some softer
+    # materials, like certain AlNiCo grades, which causes explicit solvers to diverge even at very fine steps.
+    # Hence, it appears to be necessary to employ implicit methods.
+    # noinspection PyUnresolvedReferences
+    solver = scipy.integrate.BDF(
+        rhs,
+        H0,
+        np.array([M0], dtype=np.float64),
+        t_bound=H_stop_range[1] * sign,
+        max_step=(1e3, 1e4, 1e4)[coarseness],
+        rtol=(0.01, 0.1, 1.0)[coarseness],  # Takes precedence at strong magnetization
+        atol=(1.0, 10, 1000)[coarseness],  # Takes precedence at weak magnetization
+    )
+    hm = np.empty((10**8, 2), dtype=np.float64)
+    hm[0] = H0, M0
+    idx = 1
+    while solver.status == "running":
+        H_old, M_old = solver.t, solver.y[0]
+        try:
+            msg = solver.step()
+        except (ZeroDivisionError, FloatingPointError) as ex:
+            msg = f"#{idx*sign:+d} {H0=} {M0=} H={H_old} M={M_old}: {type(ex).__name__}: {ex}"
+            if idx < 10:
+                raise NumericalError(msg) from ex
+            _logger.warning("Stopping the sweep early: %s", msg)
+            _logger.debug("Stack trace for the above error", exc_info=True)
+            break
+        if solver.status not in ("running", "finished"):
+            raise ConvergenceError(
+                f"#{idx*sign:+06d} {H0=:+012.3f} {M0=:+012.3f} H={H_old:+012.3f} M={M_old:+012.3f}: {msg}"
+            )
+        H_new, M_new = solver.t, solver.y[0]
+        hm[idx] = H_new, M_new
+        idx += 1
+        # Terminate sweep early if the material is already saturated.
+        chi = abs((M_new - M_old) / (H_new - H_old)) if abs(H_new - H_old) > 1e-10 else np.inf
+        if H_new * sign >= H_stop_range[0] and chi < saturation_susceptibility:
+            break
+
+    return hm[:idx]
 
 
 @njit(nogil=True)

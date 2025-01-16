@@ -37,6 +37,7 @@ def make_objective_function(
     loss_fun: LossFunction,
     *,
     H_stop_range: tuple[float, float],
+    coarseness: int = 0,
     decimate_solution_to: int = 10_000,
     stop_loss: float = -np.inf,
     stop_evals: int = 10**10,
@@ -57,7 +58,7 @@ def make_objective_function(
         started_at = time.monotonic()
         elapsed_loss = 0.0
         try:
-            sol = solve(c, H_stop_range=H_stop_range)
+            sol = solve(c, H_stop_range=H_stop_range, coarseness=coarseness)
         except SolverError as ex:
             error = f"{type(ex).__name__}: {ex}"
             loss = np.inf
@@ -75,13 +76,14 @@ def make_objective_function(
             _logger.warning("#%05d ❌ %6.3fs: %s %s", this_epoch, elapsed, c, error)
         else:
             _logger.info(
-                "#%05d %s %6.3fs: %s loss=%.6f t_loss=%.3f pts=%.0fk",
+                "#%05d %s %6.3fs: %s loss=%.6f t_loss=%.3f crs=%d pts=%.0fk",
                 this_epoch,
                 "🔵✅"[is_best],
                 elapsed,
                 c,
                 loss,
                 elapsed_loss,
+                coarseness,
                 (len(sol.loop.descending) + len(sol.loop.ascending)) * 1e-3 if sol else 0,
             )
         if is_best and cb_on_best is not None and sol:

@@ -106,6 +106,7 @@ def do_fit(
                 ref,
                 loss.demag_key_points,
                 H_stop_range=H_stop_range,
+                coarseness=2,
                 stop_loss=1e-3,  # Fine adjustment is meaningless the loss fun is crude here.
                 stop_evals=max_evaluations_per_stage,
                 cb_on_best=make_on_best_callback("initial", ref),
@@ -125,6 +126,7 @@ def do_fit(
                 ref,
                 loss.nearest,
                 H_stop_range=H_stop_range,
+                coarseness=1,
                 stop_evals=max_evaluations_per_stage,
                 cb_on_best=make_on_best_callback("global", ref),
             ),
