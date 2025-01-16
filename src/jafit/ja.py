@@ -37,6 +37,9 @@ class Coef:
         a       domain wall density                                                 non-negative    ampere/meter
         k_p     pinning loss                                                        non-negative    ampere/meter
         alpha   interdomain coupling                                                non-negative    dimensionless
+
+    Large values of alpha may undermine the numerical stability of the solver because it may cause small denominators
+    to occur during the dM/dH computation.
     """
 
     c_r: float
@@ -231,7 +234,6 @@ def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float,
     """
     Evaluates the magnetic susceptibility derivative at the given point of the M(H) curve.
     The result is sensitive to the sign of the H change; the direction is defined as sign(dH).
-    This implements the model described in "Jiles–Atherton Magnetic Hysteresis Parameters Identification", Pop et al.
 
     >>> fun = lambda H, M, d: _dM_dH(**dataclasses.asdict(COEF_COMSOL_JA_MATERIAL), H=H, M=M, direction=d)
     >>> assert np.isclose(fun(0, 0, +1), fun(0, 0, -1))
