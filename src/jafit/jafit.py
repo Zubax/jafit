@@ -15,7 +15,7 @@ from typing import Callable, TypeVar, Iterable
 import logging
 from pathlib import Path
 import numpy as np
-from .ja import Solution, Coef, solve
+from .ja import Solution, Coef, solve, SolverError
 from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, mu_0, hm_to_hj
 from .opt import fit_global, fit_local, make_objective_function
 from . import loss, io
@@ -176,6 +176,17 @@ def plot(sol: Solution, ref: HysteresisLoop | None, title: str, plot_file: Path 
     plot_hb(specs, title, plot_file)
 
 
+def plot_failed(ex: SolverError, coef: Coef) -> None:
+    from .vis import Style, Color, plot_hb
+
+    if ex.partial_curve is not None:
+        specs = [("J(H)", hm_to_hj(ex.partial_curve), Style.line, Color.black)]
+        title = f"{type(ex).__name__}: {ex}\n{coef}"
+        plot_hb(specs, title, f"FAILURE.{coef}{PLOT_FILE_SUFFIX}")
+    else:
+        _logger.info("Partial error curve is not available for plotting")
+
+
 def run(
     ref_file_path: str | None = None,
     *unnamed_args: str,
@@ -218,7 +229,11 @@ def run(
 
     # Solve with the coefficients and plot the results.
     _logger.info("Solving and plotting: %s", coef)
-    sol = solve(coef, H_stop_range=(min(50e3, H_max), H_max))
+    try:
+        sol = solve(coef, H_stop_range=(min(50e3, H_max), H_max))
+    except SolverError as ex:
+        plot_failed(ex, coef)
+        raise
     _logger.debug("Solved loop: %s", sol.loop)
 
     # Extract the key parameters from the descending loop.

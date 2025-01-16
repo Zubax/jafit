@@ -15,7 +15,9 @@ from .mag import HysteresisLoop
 
 
 class SolverError(RuntimeError):
-    pass
+    def __init__(self, message: str, partial_curve: npt.NDArray[np.float64] | None = None) -> None:
+        super().__init__(message)
+        self.partial_curve = partial_curve
 
 
 class ConvergenceError(SolverError):
@@ -218,7 +220,8 @@ def _sweep(
             break
         if solver.status not in ("running", "finished"):
             raise ConvergenceError(
-                f"#{idx*sign:+06d} {H0=:+012.3f} {M0=:+012.3f} H={H_old:+012.3f} M={M_old:+012.3f}: {msg}"
+                f"#{idx*sign:+06d} {H0=:+012.3f} {M0=:+012.3f} H={H_old:+012.3f} M={M_old:+012.3f}: {msg}",
+                partial_curve=hm[:idx],
             )
         mew = solver.t, solver.y[0]
         if np.any(np.abs(hm[idx - 1] - mew) > save_delta):
