@@ -174,8 +174,10 @@ def _sweep(
     saturation_susceptibility: float,
     H_stop_range: tuple[float, float],
     coarseness: int,
+    save_delta: npt.NDArray[np.float64] = np.array([3.0, 1.0], dtype=np.float64),
 ) -> npt.NDArray[np.float64]:
     assert sign in (-1, +1)
+    assert save_delta.shape == (2,)
     if not (0 <= coarseness <= MAX_COARSENESS):
         raise ValueError(f"Invalid coarseness: {coarseness}")
     c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
@@ -195,7 +197,7 @@ def _sweep(
         H0,
         np.array([M0], dtype=np.float64),
         t_bound=H_stop_range[1] * sign,
-        max_step=10,
+        max_step=10,  # Max step has to be small always; larger steps are more likely to blow up the solver
         rtol=(0.001, 0.01, 1.0)[coarseness],  # Takes precedence at strong magnetization
         atol=(0.1, 1.0, 1000)[coarseness],  # Takes precedence at weak magnetization
     )
@@ -217,13 +219,20 @@ def _sweep(
             raise ConvergenceError(
                 f"#{idx*sign:+06d} {H0=:+012.3f} {M0=:+012.3f} H={H_old:+012.3f} M={M_old:+012.3f}: {msg}"
             )
-        H_new, M_new = solver.t, solver.y[0]
-        hm[idx] = H_new, M_new
-        idx += 1
+        mew = solver.t, solver.y[0]
+        if np.any(np.abs(hm[idx - 1] - mew) > save_delta):
+            hm[idx] = mew
+            idx += 1
+        H_new, M_new = mew
         # Terminate sweep early if the material is already saturated.
         chi = abs((M_new - M_old) / (H_new - H_old)) if abs(H_new - H_old) > 1e-10 else np.inf
         if H_new * sign >= H_stop_range[0] and chi < saturation_susceptibility:
             break
+
+    # Ensure the last point is saved.
+    if np.abs(hm[idx - 1] - (mew := solver.t, solver.y[0])).max() > 1e-9:
+        hm[idx] = mew
+        idx += 1
 
     return hm[:idx]
 
