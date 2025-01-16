@@ -80,7 +80,7 @@ def do_fit(
         k_p=_perhaps(k_p, 1e3),
         alpha=_perhaps(alpha, 0.001),
     )
-    x_min = Coef(c_r=0, M_s=M_s_min, a=1, k_p=1, alpha=1e-10)
+    x_min = Coef(c_r=1e-10, M_s=M_s_min, a=1, k_p=1, alpha=1e-10)
     # TODO: better way of setting the upper bounds?
     x_max = Coef(c_r=0.999, M_s=3e6, a=1e4, k_p=1e5, alpha=0.1)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)

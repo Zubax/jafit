@@ -32,7 +32,7 @@ class Coef:
     Per the original model definition, all of them can be scalars or 3x3 matrices:
 
         Symbol  Description                                                         Range           Unit
-        c_r     magnetization reversibility (1 for purely anhysteretic material)    [0, 1]          dimensionless
+        c_r     magnetization reversibility (1 for purely anhysteretic material)    (0, 1]          dimensionless
         M_s     saturation magnetization                                            non-negative    ampere/meter
         a       domain wall density                                                 non-negative    ampere/meter
         k_p     pinning loss                                                        non-negative    ampere/meter
