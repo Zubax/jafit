@@ -190,7 +190,8 @@ def _sweep(
     # (see the git history for details).
     # However, the equation can be quite stiff at certain coefficients that do occur in practice with some softer
     # materials, like certain AlNiCo grades, which causes explicit solvers to diverge even at very fine steps.
-    # Hence, it appears to be necessary to employ implicit methods.
+    # Hence, it appears to be necessary to employ implicit methods. Note though that we sweep H back and forth
+    # manually, so our overall approach perhaps should be called semi-implicit.
     # noinspection PyUnresolvedReferences
     solver = scipy.integrate.BDF(
         rhs,
