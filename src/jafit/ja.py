@@ -199,7 +199,7 @@ def _sweep(
         t_bound=H_stop_range[1] * sign,
         max_step=10,  # Max step has to be small always; larger steps are more likely to blow up the solver
         rtol=(0.001, 0.01, 1.0)[coarseness],  # Takes precedence at strong magnetization
-        atol=(0.1, 1.0, 1000)[coarseness],  # Takes precedence at weak magnetization
+        atol=(0.1, 1.0, 100)[coarseness],  # Takes precedence at weak magnetization
     )
     hm = np.empty((10**8, 2), dtype=np.float64)
     hm[0] = H0, M0
