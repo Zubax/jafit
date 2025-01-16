@@ -8,8 +8,6 @@ import os
 import time
 import warnings
 import dataclasses
-import threading
-from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 from logging import getLogger
 import numpy as np
@@ -47,15 +45,13 @@ def make_objective_function(
     """
     WARNING: cb_on_best() may be invoked from a different thread concurrently!.
     """
-    g_mutex = threading.Lock()
     g_epoch = 0
     g_best_loss = np.inf
 
     def obj_fn(c: Coef) -> ObjectiveFunctionResult:
         nonlocal g_epoch, g_best_loss
-        with g_mutex:
-            this_epoch = g_epoch
-            g_epoch += 1
+        this_epoch = g_epoch
+        g_epoch += 1
 
         sol: Solution | None = None
         started_at = time.monotonic()
@@ -72,18 +68,18 @@ def make_objective_function(
             elapsed_loss = time.monotonic() - loss_started_at
         elapsed = time.monotonic() - started_at
 
-        with g_mutex:
-            is_best = loss < g_best_loss
-            g_best_loss = loss if is_best else g_best_loss
+        is_best = loss < g_best_loss
+        g_best_loss = loss if is_best else g_best_loss
 
         if error:
-            _logger.warning("Solution #%05d: %s t=%.3f; error: %s", this_epoch, c, elapsed, error)
+            _logger.warning("#%05d ❌ %6.3fs: %s %s", this_epoch, elapsed, c, error)
         else:
-            (_logger.info if is_best else _logger.debug)(
-                "Solution #%05d: %s t=%.3f loss=%.6f t_loss=%.3f pts=%.0fk",
+            _logger.info(
+                "#%05d %s %6.3fs: %s loss=%.6f t_loss=%.3f pts=%.0fk",
                 this_epoch,
-                c,
+                "🔵✅"[is_best],
                 elapsed,
+                c,
                 loss,
                 elapsed_loss,
                 (len(sol.loop.descending) + len(sol.loop.ascending)) * 1e-3 if sol else 0,
@@ -105,44 +101,34 @@ def fit_global(
 ) -> Coef:
     # noinspection PyTypeChecker
     v_0, v_min, v_max = (np.array(dataclasses.astuple(j)) for j in (x_0, x_min, x_max))
-    mutex = threading.Lock()
     is_done = False
-
-    n_workers = int(os.cpu_count() * 0.8)
-    if n_workers < 1:
-        raise RuntimeError(f"Insufficient number of CPU cores: {os.cpu_count()} cores => {n_workers} workers")
-    executor = ThreadPoolExecutor(max_workers=n_workers)
 
     def obj_fn_proxy(x: npt.NDArray[np.float64]) -> float:
         nonlocal is_done
         x = np.minimum(np.maximum(x, v_min), v_max)  # Some optimizers may violate the bounds
         ofr = obj_fn(Coef(*map(float, x)))
         if ofr.done:
-            with mutex:
-                is_done = True
+            is_done = True
         return ofr.loss
 
     def cb(intermediate_result: opt.OptimizeResult) -> None:
         _ = intermediate_result
-        with mutex:
-            if is_done:
-                raise StopIteration
+        if is_done:
+            raise StopIteration
 
-    _logger.info("Global optimization: x_0=%s, x_min=%s, x_max=%s, n_workers=%d", x_0, x_min, x_max, n_workers)
+    _logger.info("Global optimization: x_0=%s, x_min=%s, x_max=%s", x_0, x_min, x_max)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         res = opt.differential_evolution(
             obj_fn_proxy,
             [(lo, hi) for lo, hi in zip(v_min, v_max)],
             x0=v_0,
-            mutation=(0.5, 1.9),
+            mutation=(0.5, 1.0),
             recombination=0.7,
-            popsize=30,
+            popsize=15,
             maxiter=10**6,
             tol=tolerance or 0.01,
             callback=cb,
-            workers=executor.map,
-            updating="deferred",
         )
     _logger.info("Global optimization result:\n%s", res)
     # We have to check is_done because an early stop is considered an error by the optimizer (strange but true).

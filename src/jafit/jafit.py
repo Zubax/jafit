@@ -16,7 +16,7 @@ import logging
 from pathlib import Path
 import numpy as np
 from .ja import Solution, Coef, solve
-from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, mu_0, hm_to_hb, hm_to_hj
+from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, mu_0, hm_to_hj
 from .opt import fit_global, fit_local, make_objective_function
 from . import loss, io
 
@@ -291,7 +291,7 @@ def _setup_logging() -> None:
 
     file_handler = logging.FileHandler("jafit.log", mode="w", encoding="utf-8")
     file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(name)s: %(message)s"))
     logging.getLogger().addHandler(file_handler)
 
     logging.getLogger("numpy").setLevel(logging.WARNING)
