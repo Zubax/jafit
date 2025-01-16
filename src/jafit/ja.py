@@ -195,7 +195,7 @@ def _sweep(
         H0,
         np.array([M0], dtype=np.float64),
         t_bound=H_stop_range[1] * sign,
-        max_step=(1e2, 1e3, 1e3)[coarseness],
+        max_step=10,
         rtol=(0.001, 0.01, 1.0)[coarseness],  # Takes precedence at strong magnetization
         atol=(0.1, 1.0, 1000)[coarseness],  # Takes precedence at weak magnetization
     )
