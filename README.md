@@ -77,7 +77,7 @@ jafit c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001
 
 <img src="validation/H(t),M(t),B(t) c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="400px" alt=""><img src="validation/hysteresis c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="400px" alt="">
 
-# Specimen C
+### Specimen C
 
 ```shell
 jafit c_r=0.5 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001
