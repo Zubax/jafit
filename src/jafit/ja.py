@@ -5,6 +5,7 @@ Jiles-Atherton solver.
 """
 
 from __future__ import annotations
+from typing import Any
 from logging import getLogger
 import dataclasses
 import numpy as np
@@ -85,10 +86,9 @@ class Solution:
 def solve(
     coef: Coef,
     *,
-    tolerance: float = 1e-4,
+    tolerance: float = 1e-3,
     saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
-    max_iter: int = 10**7,
     no_balancing: bool = False,
 ) -> Solution:
     """
@@ -111,14 +111,17 @@ def solve(
     In that case, either the ``max_iter`` needs to be raised, or the tolerance needs to be relaxed.
     """
     c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
+    save_step = np.array([3, 3], dtype=np.float64)
 
-    def sweep(H: float, M: float, sign: int) -> npt.NDArray[np.float64]:
+    def sweep(H0: float, M0: float, sign: int) -> npt.NDArray[np.float64]:
         assert sign in (-1, +1)
-        hm = np.empty((max_iter, 2), dtype=np.float64)
-        hm[0] = H, M  # The initial point shall be set by the caller.
+        hm = np.empty((10**8, 2), dtype=np.float64)  # Empty is allocated from virtual memory unless written to.
         idx = np.array([0], dtype=np.uint32)
-        try:
-            status = _solve(
+
+        def try_once(target_rel_err: float, dH_abs_initial: float, dH_abs_range: tuple[float, float]) -> str:
+            hm[0] = H0, M0  # The initial point shall be set by the caller.
+            idx[0] = 0  # Reset the index to the initial point.
+            return _solve(
                 hm_out=hm,
                 idx_out=idx,
                 c_r=c_r,
@@ -128,11 +131,19 @@ def solve(
                 alpha=alpha,
                 direction=sign,
                 tolerance=tolerance,
+                max_rel_error=100,
+                target_rel_err=target_rel_err,
+                dH_abs_initial=dH_abs_initial,
+                dH_abs_range=dH_abs_range,
+                save_step=save_step,
                 saturation_susceptibility=saturation_susceptibility,
                 H_stop_range=H_stop_range,
             )
+
+        status = ""
+        try:
+            status = try_once(target_rel_err=0.01, dH_abs_initial=1e-6, dH_abs_range=(1e-8, 1.0))
         except (FloatingPointError, ZeroDivisionError) as ex:
-            status = "Too few points in the sweep" if idx[0] < 10 else ""
             H, M = hm[idx[0]]
             _logger.warning(
                 "Sweep stopped at #%s, H=%+.3f, M=%+.3f with %s due to numerical error: %s", idx[0], H, M, coef, ex
@@ -143,7 +154,8 @@ def solve(
         hm.setflags(write=False)
         H, M = hm[-1]
         if status:
-            raise ConvergenceError(f"Convergence failure at #{idx[0]} with {coef}, H={H:+.3f}, M={M:+.3f}: {status}")
+            arrow = " ↑↓"[sign]
+            raise ConvergenceError(f"{arrow}#{idx[0]} H0={H0:+.3f} H={H:+.3f} M0={M0:.3f} M={M:+.3f}: {status}")
         return hm
 
     hm_virgin = sweep(0, 0, +1)
@@ -178,6 +190,11 @@ def _solve(
     alpha: float,
     direction: int,
     tolerance: float,
+    max_rel_error: float,
+    target_rel_err: float,
+    dH_abs_initial: float,
+    dH_abs_range: tuple[float, float],
+    save_step: npt.NDArray[np.float64],
     saturation_susceptibility: float,
     H_stop_range: tuple[float, float],
 ) -> str:
@@ -185,51 +202,91 @@ def _solve(
     This function is very bare-bones because it has to be compilable in the nopython mode.
     We can't handle exceptions, can't log, etc, just numerical stuff; the flip side is that it is super fast.
     The caller needs to jump through some extra hoops to use this function, but it is worth it.
+    This function is designed to be re-invoked with different parameters if the solver fails to converge.
     """
     assert direction in (-1, +1)
-    assert len(hm_out.shape) == 2 and (hm_out.shape[1] == 2)
+    assert len(hm_out.shape) == 2 and (hm_out.shape[1] == 2) and (hm_out.shape[0] > 1)
     assert idx_out.shape == (1,)
     assert idx_out[0] == 0
+    assert tolerance > 0
+    assert max_rel_error >= 1
+    assert 0 < target_rel_err < 1
+    assert 0 < dH_abs_range[0] < dH_abs_initial < dH_abs_range[1]
+    assert np.all(save_step > 0)
 
-    dH_abs = 0.01  # This is just a guess that will be dynamically refined.
-    max_iter = hm_out.shape[0]
-    assert max_iter > 1
+    eps = np.finfo(np.float64).eps
+
+    # Dormand–Prince (RK45) constants for single dimension
+    C2, C3, C4, C5 = 1 / 5, 3 / 10, 4 / 5, 8 / 9
+    A21 = 1 / 5
+    A31, A32 = 3 / 40, 9 / 40
+    A41, A42, A43 = 44 / 45, -56 / 15, 32 / 9
+    A51, A52, A53, A54 = 19372 / 6561, -25360 / 2187, 64448 / 6561, -212 / 729
+    A61, A62, A63, A64, A65 = 9017 / 3168, -355 / 33, 46732 / 5247, 49 / 176, -5103 / 18656
+    # 5th-order weights
+    B1, B2, B3, B4, B5, B6 = 35 / 384, 0.0, 500 / 1113, 125 / 192, -2187 / 6784, 11 / 84
+    # 4th-order weights (for the embedded estimate)
+    B1_4, B2_4, B3_4, B4_4, B5_4, B6_4 = 5179 / 57600, 7571 / 16695, 393 / 640, -92097 / 339200, 187 / 2100, 1 / 40
+
+    df = lambda h, m: _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=h, M=m, direction=direction)
+    dH_abs = dH_abs_initial
     assert np.isfinite(hm_out[0]).all()  # We require that the first point is already filled in.
-    while idx_out[0] < (max_iter - 1):
+    H, M = hm_out[0]
+    while True:
         dH = direction * dH_abs
-        H, M = hm_out[idx_out[0]]
 
-        # Integrate using Heun's method (instead of Euler's) for better stability.
+        # Integrate using a high-order method because the equation can be stiff at high susceptibility.
         # _dM_dH() may throw FloatingPointError or ZeroDivisionError; we can't handle them in the compiled code.
         # Since we always update the current state in the caller's context, we can still return partial solution
         # even if an exception is raised.
-        dM_dH_1 = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=H, M=M, direction=direction)
-        M_1 = M + dM_dH_1 * dH
-        dM_dH_2 = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=H + dH, M=M_1, direction=direction)
-        M_2 = M + 0.5 * (dM_dH_1 + dM_dH_2) * dH
+        k1 = df(H, M)
+        k2 = df(H + C2 * dH, M + dH * (A21 * k1))
+        k3 = df(H + C3 * dH, M + dH * (A31 * k1 + A32 * k2))
+        k4 = df(H + C4 * dH, M + dH * (A41 * k1 + A42 * k2 + A43 * k3))
+        k5 = df(H + C5 * dH, M + dH * (A51 * k1 + A52 * k2 + A53 * k3 + A54 * k4))
+        k6 = df(H + dH, M + dH * (A61 * k1 + A62 * k2 + A63 * k3 + A64 * k4 + A65 * k5))
 
-        # Check if the tolerance is acceptable, only accept the data point if it is; otherwise refine and retry.
-        if np.abs(M_1 - M_2) > tolerance:
-            dH_abs *= 0.5
-            if dH_abs < 1e-8:
-                return "Convergence failure: error still large at the smallest step size"
-            continue
+        M5 = M + dH * (B1 * k1 + B2 * k2 + B3 * k3 + B4 * k4 + B5 * k5 + B6 * k6)
+        M4 = M + dH * (B1_4 * k1 + B2_4 * k2 + B3_4 * k3 + B4_4 * k4 + B5_4 * k5 + B6_4 * k6)
 
-        # Save the next point. This ensures that the caller will get partial results even if an exception is raised.
-        idx = idx_out[0] + 1
-        idx_out[0] = idx
-        dH_abs = min(dH_abs * 1.1, 1e3)
-        hm_out[idx] = H + dH, M_2
+        err_local = np.abs(M5 - M4)
+        H_new, M_new = H + dH, M5
 
-        # Termination check and logging. It is guaranteed that we have at least two points now.
-        # No need to log the termination reason here because it is easily inferrable from the output.
-        chi = np.abs((hm_out[idx][1] - hm_out[idx - 1][1]) / (hm_out[idx][0] - hm_out[idx - 1][0]))
+        # Compute the adjustment to the step size.
+        e = err_local / tolerance
+        adj = min(max(target_rel_err / (e + 1e-9), 0.01), 1.01)
+
+        # Adjust the step size keeping it within the allowed range.
+        dH_abs = min(max(dH_abs * adj, float(dH_abs_range[0])), float(dH_abs_range[1]))
+
+        # This equation can be quite stiff depending on the parameters, so merely taking a few steps
+        # back is not enough: if the error went out of bounds, that means the divergence started many steps ago.
+        assert e >= 0
+        if e > 1 and abs(dH) > (dH_abs_range[0] + eps):
+            continue  # We try it anyway a few times because it's very cheap.
+        if e > max_rel_error:
+            return "Error too large"
+
+        # Termination check and logging. No need to log the termination reason because it is inferrable from the output.
+        # noinspection PyTypeChecker
+        chi = abs((M_new - M) / (H_new - H)) if abs(H_new - H) > 1e-10 else np.inf
         if H * direction >= H_stop_range[0] and chi < saturation_susceptibility:
-            return ""
+            break
         if H * direction > H_stop_range[1]:
-            return ""
+            break
 
-    return "Maximum number of iterations reached"
+        H, M = H_new, M_new
+        # Save the data point. The caller will get partial results even if an exception is raised.
+        if np.any(np.abs(np.array([H, M]) - hm_out[idx_out[0]]) > save_step):
+            idx_out[0] += 1
+            if idx_out[0] < len(hm_out):
+                hm_out[idx_out[0]] = H_new, M_new
+            else:
+                return "Not enough storage space"
+
+    if idx_out[0] < len(hm_out):
+        hm_out[idx_out[0]] = H, M  # Save the last point.
+    return ""
 
 
 @njit(nogil=True)

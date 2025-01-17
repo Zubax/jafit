@@ -4,9 +4,12 @@
 Optimization utilities.
 """
 
+import os
 import time
 import warnings
 import dataclasses
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 from logging import getLogger
 import numpy as np
@@ -35,43 +38,59 @@ def make_objective_function(
     ref: HysteresisLoop,
     loss_fun: LossFunction,
     *,
-    tolerance: float,
     H_stop_range: tuple[float, float],
     decimate_solution_to: int = 10_000,
     stop_loss: float = -np.inf,
     stop_evals: int = 10**10,
     cb_on_best: Callable[[int, float, Coef, Solution], None] | None = None,
 ) -> ObjectiveFunction:
-    epoch = 0
-    best_loss = np.inf
+    """
+    WARNING: cb_on_best() may be invoked from a different thread concurrently!.
+    """
+    g_mutex = threading.Lock()
+    g_epoch = 0
+    g_best_loss = np.inf
 
     def obj_fn(c: Coef) -> ObjectiveFunctionResult:
-        nonlocal epoch, best_loss
+        nonlocal g_epoch, g_best_loss
+        with g_mutex:
+            this_epoch = g_epoch
+            g_epoch += 1
+
         sol: Solution | None = None
         started_at = time.monotonic()
+        elapsed_loss = 0.0
         try:
-            sol = solve(c, tolerance=tolerance, H_stop_range=H_stop_range)
+            sol = solve(c, H_stop_range=H_stop_range)
         except SolverError as ex:
-            _logger.debug("Solver error: %s: %s", type(ex).__name__, ex)
+            error = f"{type(ex).__name__}: {ex}"
             loss = np.inf
         else:
+            error = ""
+            loss_started_at = time.monotonic()
             loss = loss_fun(ref, sol.loop.decimate(decimate_solution_to))
+            elapsed_loss = time.monotonic() - loss_started_at
         elapsed = time.monotonic() - started_at
-        is_best = loss < best_loss
-        best_loss = loss if is_best else best_loss
-        (_logger.info if is_best else _logger.debug)(
-            "Solution #%05d: %s loss=%.6f, tolerance=%f, elapsed=%.0fms",
-            epoch,
-            c,
-            loss,
-            tolerance,
-            elapsed * 1e3,
-        )
+
+        with g_mutex:
+            is_best = loss < g_best_loss
+            g_best_loss = loss if is_best else g_best_loss
+
+        if error:
+            _logger.warning("Solution #%05d: %s t=%.3f; error: %s", this_epoch, c, elapsed, error)
+        else:
+            (_logger.info if is_best else _logger.debug)(
+                "Solution #%05d: %s t=%.3f loss=%.6f t_loss=%.3f pts=%.0fk",
+                this_epoch,
+                c,
+                elapsed,
+                loss,
+                elapsed_loss,
+                (len(sol.loop.descending) + len(sol.loop.ascending)) * 1e-3 if sol else 0,
+            )
         if is_best and cb_on_best is not None and sol:
-            cb_on_best(epoch, loss, c, sol)
-        epoch += 1
-        done = loss < stop_loss or epoch >= stop_evals
-        return ObjectiveFunctionResult(loss=loss, done=done)
+            cb_on_best(this_epoch, loss, c, sol)
+        return ObjectiveFunctionResult(loss=loss, done=loss < stop_loss or this_epoch >= stop_evals)
 
     return obj_fn
 
@@ -86,16 +105,30 @@ def fit_global(
 ) -> Coef:
     # noinspection PyTypeChecker
     v_0, v_min, v_max = (np.array(dataclasses.astuple(j)) for j in (x_0, x_min, x_max))
+    mutex = threading.Lock()
     is_done = False
+
+    n_workers = int(os.cpu_count() * 0.8)
+    if n_workers < 1:
+        raise RuntimeError(f"Insufficient number of CPU cores: {os.cpu_count()} cores => {n_workers} workers")
+    executor = ThreadPoolExecutor(max_workers=n_workers)
 
     def obj_fn_proxy(x: npt.NDArray[np.float64]) -> float:
         nonlocal is_done
         x = np.minimum(np.maximum(x, v_min), v_max)  # Some optimizers may violate the bounds
         ofr = obj_fn(Coef(*map(float, x)))
-        is_done = ofr.done
+        if ofr.done:
+            with mutex:
+                is_done = True
         return ofr.loss
 
-    _logger.info("Global optimization: x_0=%s, x_min=%s, x_max=%s", x_0, x_min, x_max)
+    def cb(intermediate_result: opt.OptimizeResult) -> None:
+        _ = intermediate_result
+        with mutex:
+            if is_done:
+                raise StopIteration
+
+    _logger.info("Global optimization: x_0=%s, x_min=%s, x_max=%s, n_workers=%d", x_0, x_min, x_max, n_workers)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         res = opt.differential_evolution(
@@ -105,9 +138,11 @@ def fit_global(
             mutation=(0.5, 1.9),
             recombination=0.7,
             popsize=30,
-            maxiter=10**4,
+            maxiter=10**6,
             tol=tolerance or 0.01,
-            callback=lambda *_, **_k: is_done,
+            callback=cb,
+            workers=executor.map,
+            updating="deferred",
         )
     _logger.info("Global optimization result:\n%s", res)
     # We have to check is_done because an early stop is considered an error by the optimizer (strange but true).

@@ -35,6 +35,7 @@ T = TypeVar("T")
 def make_on_best_callback(file_name_prefix: str, ref: HysteresisLoop) -> Callable[[int, float, Coef, Solution], None]:
 
     def cb(epoch: int, loss_value: float, coef: Coef, sol: Solution) -> None:
+        # Keep in mind that this callback itself may be invoked from a different thread.
         def bg() -> None:
             try:
                 started_at = time.monotonic()
@@ -75,13 +76,13 @@ def do_fit(
     coef = Coef(
         c_r=_perhaps(c_r, 1e-6),
         M_s=_perhaps(M_s, M_s_min * 1.001),  # Optimizers tend to be unstable if parameters are too close to the bounds
-        a=_perhaps(a, 1e4),
-        k_p=_perhaps(k_p, 1e4),
-        alpha=_perhaps(alpha, 0.1),
+        a=_perhaps(a, 1e3),
+        k_p=_perhaps(k_p, 1e3),
+        alpha=_perhaps(alpha, 0.001),
     )
-    x_min = Coef(c_r=0, M_s=M_s_min, a=0, k_p=0, alpha=0)
+    x_min = Coef(c_r=0, M_s=M_s_min, a=1, k_p=1, alpha=1e-10)
     # TODO: better way of setting the upper bounds?
-    x_max = Coef(c_r=1, M_s=3e6, a=1e5, k_p=1e5, alpha=1)
+    x_max = Coef(c_r=0.999, M_s=3e6, a=1e4, k_p=1e5, alpha=0.1)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
 
     # Ensure the swept H-range is large enough.
@@ -104,9 +105,8 @@ def do_fit(
             obj_fn=make_objective_function(
                 ref,
                 loss.demag_key_points,
-                tolerance=1.0,  # This is a very rough approximation
                 H_stop_range=H_stop_range,
-                stop_loss=1e-3,  # Fine adjustment is meaningless because the solver and the loss fun are crude here
+                stop_loss=1e-3,  # Fine adjustment is meaningless the loss fun is crude here.
                 stop_evals=max_evaluations_per_stage,
                 cb_on_best=make_on_best_callback("initial", ref),
             ),
@@ -124,7 +124,6 @@ def do_fit(
             obj_fn=make_objective_function(
                 ref,
                 loss.nearest,
-                tolerance=0.01,
                 H_stop_range=H_stop_range,
                 stop_evals=max_evaluations_per_stage,
                 cb_on_best=make_on_best_callback("global", ref),
@@ -140,7 +139,6 @@ def do_fit(
         obj_fn=make_objective_function(
             ref,
             loss.nearest,
-            tolerance=1e-4,
             H_stop_range=H_stop_range,
             stop_evals=max_evaluations_per_stage,
             cb_on_best=make_on_best_callback("local", ref),
@@ -288,7 +286,7 @@ def _setup_logging() -> None:
 
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-3.3s %(name)s: %(message)s"))
+    console_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-3.3s %(name)s: %(message)s", "%H:%M:%S"))
     logging.getLogger().addHandler(console_handler)
 
     file_handler = logging.FileHandler("jafit.log", mode="w", encoding="utf-8")

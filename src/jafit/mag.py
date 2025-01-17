@@ -50,7 +50,7 @@ class HysteresisLoop:
         if not self.is_full:
             raise ValueError(f"Cannot balance the hysteresis loop because one of the branches is missing: {self}")
         if max(len(self.descending), len(self.ascending)) / min(len(self.descending), len(self.ascending)) >= 10:
-            _logger.warning("HysteresisLoop: Balancing: The curves have significantly different lengths:\n%s", self)
+            _logger.debug("HysteresisLoop: Balancing: The curves have significantly different lengths:\n%s", self)
 
         # Prepare the curves such that they are both in the H-ascending order and have the same polarity.
         # There is one caveat: the sample density may vary in the beginning and at the end of the curves

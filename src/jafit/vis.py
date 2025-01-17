@@ -73,7 +73,7 @@ def plot_hb(
             output_file = Path(output_file)
         if not output_file.parent.exists():
             output_file.parent.mkdir(parents=True)
-        _logger.debug(f"Saving the plot to: {output_file}")
+        _logger.debug(f"Saving the plot to: {str(output_file)!r}")
         plt.savefig(output_file)
     finally:
         plt.close(fig)
