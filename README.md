@@ -27,21 +27,20 @@ All pre-existing outputs in the current working directory are removed at startup
 jafit "data/B(H).AlNiCo_5.tab"
 ```
 
-Optionally, you can provide the initial guess for (some of) the coefficients like `c_r=0.07`, etc:
+Optionally, you can provide the initial guess for (some of) the coefficients:
 
 ```shell
 jafit "data/B(H).LNG37.ansys.tab" c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 ```
 
-Solve the JA equation with the given coefficients:
+Solve the JA equation with the given coefficients without system identification:
 
 ```shell
 jafit c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 ```
 
 Add `H_max=30e3` to manually limit the maximum H-field strength to 30 kA/m instead of relying on heuristics.
-Note that if the provided value is insufficient to reach saturation, the resulting hysteresis loop will
-be a minor loop!
+Note that if the provided value is insufficient to reach saturation, the resulting hysteresis loop will be a minor loop!
 
 ## Development
 
@@ -54,12 +53,18 @@ Then you can use `flameprof` to visualize the collected data.
 
 ## Validation
 
-There is a COMSOL model in the `validation` directory that contains a bored steel cylinder with a copper wire passing along its axis. The wire carries a 1 Hz magnetizing current whose amplitude is chosen to be just high enough to push the cylinder material into saturation, while the frequency is chosen to be low to avoid eddy currents. The setup is used to obtain the BH curve and ascertain that it matches the predictions made by the tool.
+There is a COMSOL model in the `validation` directory that contains a bored steel cylinder with a copper wire passing
+along its axis.
+The wire carries a 1 Hz magnetizing current whose amplitude is chosen to be just high enough to push the
+cylinder material into saturation, while the frequency is chosen to be low to avoid eddy currents.
+The setup is used to obtain the BH curve and ascertain that it matches the predictions made by the tool.
 
 <img src="validation/B(t).gif" width="600px" alt="">
 
-To make the prediction, run the tool specifying the JA model coefficients copied from the material properties assigned to the cylinder in the COMSOL model,
-note the predicted $H_c$, $B_r$, and $BH_\text{max}$, and compare them against the values seen in the COMSOL model.
+To make the prediction, run the tool specifying the JA model coefficients copied from the material properties
+assigned to the cylinder in the COMSOL model,
+note the predicted $H_c$, $B_r$, and $BH_\text{max}$,
+and compare them against the values seen in the COMSOL model.
 
 ### Specimen A
 
