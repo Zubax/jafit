@@ -2,6 +2,7 @@
 
 from logging import getLogger
 from pathlib import Path
+import warnings
 import enum
 import numpy as np
 import numpy.typing as npt
@@ -50,32 +51,35 @@ def plot(
                 case Style.line:
                     ax_b.plot(*s.T, label=label, color=color, linestyle="-")
 
-        for name, s_data, s_style, s_color in specs:
-            rows, cols = s_data.shape
-            if rows == 0:
-                continue
-            if cols != 2:
-                raise ValueError(f"Invalid data shape: {s_data.shape}")
-            trace(s_data, name, s_style, s_color.value)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning)
 
-        # Configure B(H)|J(H) subplot
-        ax_b.set_title(title)
-        ax_b.set_xlabel(axes_labels[0])
-        ax_b.set_ylabel(axes_labels[1])
-        ax_b.legend()
-        ax_b.xaxis.set_minor_locator(mticker.AutoMinorLocator())
-        ax_b.yaxis.set_minor_locator(mticker.AutoMinorLocator())
-        ax_b.grid(which="major", color="gray", linestyle="-", alpha=0.7)
-        ax_b.grid(which="minor", color="gray", linestyle=":", alpha=0.5)
+            for name, s_data, s_style, s_color in specs:
+                rows, cols = s_data.shape
+                if rows == 0:
+                    continue
+                if cols != 2:
+                    raise ValueError(f"Invalid data shape: {s_data.shape}")
+                trace(s_data, name, s_style, s_color.value)
 
-        # Show the plot
-        plt.tight_layout()
-        if not isinstance(output_file, Path):
-            output_file = Path(output_file)
-        if not output_file.parent.exists():
-            output_file.parent.mkdir(parents=True)
-        _logger.debug(f"Saving the plot to: {str(output_file)!r}")
-        plt.savefig(output_file)
+            # Configure B(H)|J(H) subplot
+            ax_b.set_title(title)
+            ax_b.set_xlabel(axes_labels[0])
+            ax_b.set_ylabel(axes_labels[1])
+            ax_b.legend()
+            ax_b.xaxis.set_minor_locator(mticker.AutoMinorLocator())
+            ax_b.yaxis.set_minor_locator(mticker.AutoMinorLocator())
+            ax_b.grid(which="major", color="gray", linestyle="-", alpha=0.7)
+            ax_b.grid(which="minor", color="gray", linestyle=":", alpha=0.5)
+
+            # Show the plot
+            plt.tight_layout()
+            if not isinstance(output_file, Path):
+                output_file = Path(output_file)
+            if not output_file.parent.exists():
+                output_file.parent.mkdir(parents=True)
+            _logger.debug(f"Saving the plot to: {str(output_file)!r}")
+            plt.savefig(output_file)
     finally:
         plt.close(fig)
 
