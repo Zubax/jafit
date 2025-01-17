@@ -81,7 +81,7 @@ def do_fit(
     )
     x_min = Coef(c_r=1e-10, M_s=M_s_min, a=1, k_p=1, alpha=1e-10)
     # TODO: better way of setting the upper bounds?
-    x_max = Coef(c_r=0.999, M_s=3e6, a=1e4, k_p=1e5, alpha=0.02)
+    x_max = Coef(c_r=0.999999, M_s=3e6, a=1e5, k_p=1e5, alpha=0.2)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
 
     # Ensure the swept H-range is large enough.
