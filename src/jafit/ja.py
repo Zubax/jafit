@@ -100,7 +100,7 @@ class Solution:
     loop: HysteresisLoop
 
 
-MAX_COARSENESS = 2
+_MAX_ATTEMPTS = 3
 
 
 def solve(
@@ -109,7 +109,6 @@ def solve(
     saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
     no_balancing: bool = False,
-    coarseness: int = 0,
 ) -> Solution:
     """
     Solves the JA model for the given coefficients by sweeping the magnetization in the specified direction
@@ -133,18 +132,18 @@ def solve(
                 sign=sign,
                 saturation_susceptibility=saturation_susceptibility,
                 H_stop_range=H_stop_range,
-                coarseness=crs,
+                retry=retry,
             )
 
-        crs = coarseness
+        retry = 0
         while True:
             try:
                 return once()
             except ConvergenceError as ex:
-                if crs >= MAX_COARSENESS:
+                retry += 1
+                if retry >= _MAX_ATTEMPTS:
                     raise
-                crs += 1
-                _logger.debug("Retrying the sweep with coarseness %d due to %s: %s", crs, type(ex).__name__, ex)
+                _logger.debug("Retrying the sweep [attempt #%d] due to %s: %s", retry, type(ex).__name__, ex)
 
     hm_virgin = do_sweep(0, 0, +1)
 
@@ -175,13 +174,11 @@ def _sweep(
     sign: int,
     saturation_susceptibility: float,
     H_stop_range: tuple[float, float],
-    coarseness: int,
+    retry: int,
     save_delta: npt.NDArray[np.float64] = np.array([3.0, 1.0], dtype=np.float64),
 ) -> npt.NDArray[np.float64]:
     assert sign in (-1, +1)
     assert save_delta.shape == (2,)
-    if not (0 <= coarseness <= MAX_COARSENESS):
-        raise ValueError(f"Invalid coarseness: {coarseness}")
     c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
 
     def rhs(x: float, y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
@@ -200,9 +197,9 @@ def _sweep(
         H0,
         np.array([M0], dtype=np.float64),
         t_bound=H_stop_range[1] * sign,
-        max_step=10,  # Max step has to be small always; larger steps are more likely to blow up the solver
-        rtol=(0.001, 0.01, 0.1)[coarseness],  # Takes precedence at strong magnetization
-        atol=(0.01, 0.1, 1.0)[coarseness],  # Takes precedence at weak magnetization
+        max_step=1000 / 10**retry,  # Max step must small always; larger steps are more likely to blow up
+        rtol=0.001 * 10**retry,  # Dominates at strong magnetization
+        atol=0.01 * 10**retry,  # Dominates at weak magnetization
     )
     hm = np.empty((10**8, 2), dtype=np.float64)
     hm[0] = H0, M0

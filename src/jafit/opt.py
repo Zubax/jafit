@@ -4,11 +4,10 @@
 Optimization utilities.
 """
 
-import os
 import time
 import warnings
 import dataclasses
-from typing import Callable
+from typing import Callable, Any
 from logging import getLogger
 import numpy as np
 import numpy.typing as npt
@@ -37,11 +36,11 @@ def make_objective_function(
     loss_fun: LossFunction,
     *,
     H_stop_range: tuple[float, float],
-    coarseness: int = 0,
     decimate_solution_to: int = 10_000,
     stop_loss: float = -np.inf,
     stop_evals: int = 10**10,
     cb_on_best: Callable[[int, float, Coef, Solution], None] | None = None,
+    solver_extra_args: dict[str, Any] | None = None,
 ) -> ObjectiveFunction:
     """
     WARNING: cb_on_best() may be invoked from a different thread concurrently!.
@@ -58,7 +57,7 @@ def make_objective_function(
         started_at = time.monotonic()
         elapsed_loss = 0.0
         try:
-            sol = solve(c, H_stop_range=H_stop_range, coarseness=coarseness)
+            sol = solve(c, H_stop_range=H_stop_range, **(solver_extra_args or {}))
         except SolverError as ex:
             error = f"{type(ex).__name__}: {ex}"
             loss = np.inf
