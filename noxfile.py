@@ -18,7 +18,7 @@ BYPRODUCTS = [
     ".*compiled",
     "*.log",
     "*.tmp",
-    "*.png",
+    "*.jafit.png",
 ]
 
 nox.options.error_on_external_run = True
@@ -39,22 +39,8 @@ def clean(session: nox.Session) -> None:
 
 
 @nox.session(reuse_venv=True)
-def test(session: nox.Session) -> None:
+def mypy(session: nox.Session) -> None:
     session.install("-e", ".")
-    session.install("pytest ~= 8.3", "mypy ~= 1.14", "coverage ~= 7.6")
-
-    session.run("coverage", "run", "-m", "jafit", "data/B(H).AlNiCo_5.tab", "effort=10")
-    session.run("coverage", "run", "-m", "jafit", "c_r=0.1", "M_s=1.6e6", "a=560", "k_p=1200", "alpha=0.0007")
-
-    session.run("coverage", "run", "-m", "pytest", env={"NUMBA_DISABLE_JIT": "1"})
-
-    session.run("coverage", "combine")
-    session.run("coverage", "report", "--fail-under=25")
-    if session.interactive:
-        session.run("coverage", "html")
-        report_file = Path.cwd().resolve() / "htmlcov" / "index.html"
-        session.log(f"OPEN IN WEB BROWSER: file://{report_file}")
-
     session.install("mypy ~= 1.14")
     session.run("mypy", ".")
 
@@ -63,3 +49,25 @@ def test(session: nox.Session) -> None:
 def black(session: nox.Session) -> None:
     session.install("black ~= 24.10")
     session.run("black", "--check", ".")
+
+
+@nox.session(reuse_venv=True)
+def test(session: nox.Session) -> None:
+    session.install("-e", ".")
+    session.install("coverage ~= 7.6")
+
+    # Run the tool with coverage
+    session.run("coverage", "run", "-m", "jafit", "data/B(H).AlNiCo_5.tab", "effort=10")
+    session.run("coverage", "run", "-m", "jafit", "c_r=0.1", "M_s=1.6e6", "a=560", "k_p=1200", "alpha=0.0007")
+
+    # Run pytest with coverage
+    session.install("pytest ~= 8.3")
+    session.run("coverage", "run", "-m", "pytest", env={"NUMBA_DISABLE_JIT": "1"})
+
+    # Generate coverage report
+    session.run("coverage", "combine")
+    session.run("coverage", "report", "--fail-under=25")
+    if session.interactive:
+        session.run("coverage", "html")
+        report_file = Path.cwd().resolve() / "htmlcov" / "index.html"
+        session.log(f"OPEN IN WEB BROWSER: file://{report_file}")

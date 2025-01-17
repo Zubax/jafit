@@ -2,7 +2,7 @@
 
 Jiles-Atherton system identification tool: Given a BH curve, finds the Jiles-Atherton model coefficients.
 
-<img src="doc/image.png" width="800" alt="">
+<img src="image.png" width="800" alt="">
 
 ## Usage
 
