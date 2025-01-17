@@ -209,7 +209,7 @@ def _sweep(
         np.array([M0], dtype=np.float64),
         t_bound=H_stop_range[1] * sign,
         max_step=1e3 / 10**retry,  # Max step must be small always; larger steps are more likely to blow up
-        rtol=1e-4 * 10**retry,  # Dominates at strong magnetization; must be <0.01 to avoid bad solutions
+        rtol=1e-5 * 30**retry,  # Dominates at strong magnetization; must be <0.01 to avoid bad solutions
         atol=1e-3 * 10**retry,  # Dominates at weak magnetization; must be <0.1 to avoid bad solutions
     )  # tolerance=rtol*M+atol
     hm = np.empty((10**8, 2), dtype=np.float64)
