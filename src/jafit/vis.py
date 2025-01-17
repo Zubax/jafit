@@ -24,10 +24,11 @@ class Style(enum.Enum):
     line = enum.auto()
 
 
-def plot_hb(
-    hb_specs: list[tuple[str, npt.NDArray[np.float64], Style, Color]],
+def plot(
+    specs: list[tuple[str, npt.NDArray[np.float64], Style, Color]],
     title: str,
     output_file: str | Path,
+    axes_labels: tuple[str, str],
     *,
     max_points: float = 5000,
 ) -> None:
@@ -38,29 +39,29 @@ def plot_hb(
     fig, ax_b = plt.subplots(1, 1, figsize=(14, 10), sharex="all")  # type: ignore
     try:
 
-        def trace(hb: npt.NDArray[np.float64], label: str, style: Style, color: str) -> None:
-            n_points = hb.shape[0]
+        def trace(s: npt.NDArray[np.float64], label: str, style: Style, color: str) -> None:
+            n_points = s.shape[0]
             if n_points > max_points * 2:
                 indices = np.round(np.linspace(0, n_points - 1, int(max_points))).astype(int)
-                hb = hb[indices, :]
+                s = s[indices, :]
             match style:
                 case Style.scatter:
-                    ax_b.scatter(*hb.T, label=label, color=color, marker=",", s=1)  # type: ignore
+                    ax_b.scatter(*s.T, label=label, color=color, marker=",", s=1)  # type: ignore
                 case Style.line:
-                    ax_b.plot(*hb.T, label=label, color=color, linestyle="-")
+                    ax_b.plot(*s.T, label=label, color=color, linestyle="-")
 
-        for name, hb_data, hb_style, hb_color in hb_specs:
-            rows, cols = hb_data.shape
+        for name, s_data, s_style, s_color in specs:
+            rows, cols = s_data.shape
             if rows == 0:
                 continue
             if cols != 2:
-                raise ValueError(f"Invalid data shape: {hb_data.shape}")
-            trace(hb_data, name, hb_style, hb_color.value)
+                raise ValueError(f"Invalid data shape: {s_data.shape}")
+            trace(s_data, name, s_style, s_color.value)
 
         # Configure B(H)|J(H) subplot
         ax_b.set_title(title)
-        ax_b.set_xlabel("H [ampere/meter]")
-        ax_b.set_ylabel("B [tesla]")
+        ax_b.set_xlabel(axes_labels[0])
+        ax_b.set_ylabel(axes_labels[1])
         ax_b.legend()
         ax_b.xaxis.set_minor_locator(mticker.AutoMinorLocator())
         ax_b.yaxis.set_minor_locator(mticker.AutoMinorLocator())

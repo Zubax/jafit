@@ -36,10 +36,10 @@ def make_objective_function(
     loss_fun: LossFunction,
     *,
     H_stop_range: tuple[float, float],
+    callback: Callable[[int, Coef, tuple[Solution, float] | Exception], None],
     decimate_solution_to: int = 10_000,
     stop_loss: float = -np.inf,
     stop_evals: int = 10**10,
-    cb_on_best: Callable[[int, float, Coef, Solution], None] | None = None,
     solver_extra_args: dict[str, Any] | None = None,
 ) -> ObjectiveFunction:
     """
@@ -59,6 +59,7 @@ def make_objective_function(
         try:
             sol = solve(c, H_stop_range=H_stop_range, **(solver_extra_args or {}))
         except SolverError as ex:
+            callback(this_epoch, c, ex)
             error = f"{type(ex).__name__}: {ex}"
             loss = np.inf
         else:
@@ -75,18 +76,17 @@ def make_objective_function(
             _logger.warning("#%05d ❌ %6.3fs: %s %s", this_epoch, elapsed, c, error)
         else:
             _logger.info(
-                "#%05d %s %6.3fs: %s loss=%.6f t_loss=%.3f crs=%d pts=%.0fk",
+                "#%05d %s %6.3fs: %s loss=%.6f t_loss=%.3f pts=%.0fk",
                 this_epoch,
-                "🔵✅"[is_best],
+                "🔵💚"[is_best],
                 elapsed,
                 c,
                 loss,
                 elapsed_loss,
-                coarseness,
                 (len(sol.loop.descending) + len(sol.loop.ascending)) * 1e-3 if sol else 0,
             )
-        if is_best and cb_on_best is not None and sol:
-            cb_on_best(this_epoch, loss, c, sol)
+        if is_best and sol:
+            callback(this_epoch, c, (sol, loss))
         return ObjectiveFunctionResult(loss=loss, done=loss < stop_loss or this_epoch >= stop_evals)
 
     return obj_fn
