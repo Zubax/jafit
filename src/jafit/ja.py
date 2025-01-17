@@ -121,6 +121,13 @@ def solve(
     that the material is saturated) or when the applied field magnitude exceeds ```H_stop_range[1]```.
     The saturation will not be detected unless the H-field magnitude is at least ```H_stop_range[0]```;
     this is done to handle materials that exhibit very low susceptibility at weak fields.
+
+    Some of the coefficients sets result in great stiffness;
+    they are provided here for testing and illustration purposes.
+
+    >>> stiff = Coef(c_r=0.956886485630692230, M_s=2956870.912007416, a=025069.875361107, k_p=019498.206218542, alpha=0.181220196232252662)
+    >>> solve(stiff)  # doctest: +ELLIPSIS
+    Solution(...)
     """
 
     def do_sweep(H0: float, M0: float, sign: int) -> npt.NDArray[np.float64]:
@@ -201,10 +208,10 @@ def _sweep(
         H0,
         np.array([M0], dtype=np.float64),
         t_bound=H_stop_range[1] * sign,
-        max_step=1000 / 10**retry,  # Max step must be small always; larger steps are more likely to blow up
-        rtol=0.001 * 10**retry,  # Dominates at strong magnetization
-        atol=0.01 * 10**retry,  # Dominates at weak magnetization
-    )
+        max_step=1e3 / 10**retry,  # Max step must be small always; larger steps are more likely to blow up
+        rtol=1e-4 * 10**retry,  # Dominates at strong magnetization
+        atol=1e-3 * 10**retry,  # Dominates at weak magnetization
+    )  # tolerance=rtol*M+atol
     hm = np.empty((10**8, 2), dtype=np.float64)
     hm[0] = H0, M0
     idx = 1

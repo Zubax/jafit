@@ -222,6 +222,7 @@ def plot_error(ex: SolverError, coef: Coef, plot_file: Path | str) -> None:
     ]
     title = f"{coef}\n{type(ex).__name__}\n{ex}"
     vis.plot(specs, title, plot_file, axes_labels=("H [A/m]", "M [A/m]"))
+    _logger.debug("%s max(|dH|)=%s", type(ex).__name__, np.abs(np.diff(ex.partial_curve[:, 0])).max())
 
 
 def run(
