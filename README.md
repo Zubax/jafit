@@ -58,12 +58,29 @@ There is a COMSOL model in the `validation` directory that contains a bored stee
 
 <img src="validation/B(t).gif" width="600px" alt="">
 
-To make the prediction, run the tool specifying the JA model coefficients copied from the material properties assigned to the cylinder in the COMSOL model:
+To make the prediction, run the tool specifying the JA model coefficients copied from the material properties assigned to the cylinder in the COMSOL model,
+note the predicted $H_c$, $B_r$, and $BH_\text{max}$, and compare them against the values seen in the COMSOL model.
+
+### Specimen A
 
 ```shell
 jafit c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 ```
 
-Note the predicted $H_c$, $B_r$, and $BH_\text{max}$ and compare them against the values seen in the COMSOL model.
+<img src="validation/H(t),M(t),B(t) c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007.png" width="400px" alt=""><img src="validation/hysteresis c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007.png" width="400px" alt="">
 
-<img src="validation/H(t),M(t),B(t).png" width="400px" alt=""><img src="validation/hysteresis.png" width="400px" alt="">
+### Specimen B
+
+```shell
+jafit c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001
+```
+
+<img src="validation/H(t),M(t),B(t) c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="400px" alt=""><img src="validation/hysteresis c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="400px" alt="">
+
+### Specimen C
+
+```shell
+jafit c_r=0.5 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001
+```
+
+<img src="validation/hysteresis c_r=0.5 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="400px" alt="">  

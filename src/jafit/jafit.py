@@ -11,14 +11,14 @@ import sys
 import time
 import dataclasses
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, TypeVar, Iterable
+from typing import Callable, TypeVar, Iterable, Any
 import logging
 from pathlib import Path
 import numpy as np
-from .ja import Solution, Coef, solve
-from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, mu_0, hm_to_hb, hm_to_hj
+from .ja import Solution, Coef, solve, SolverError
+from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, mu_0, hm_to_hj
 from .opt import fit_global, fit_local, make_objective_function
-from . import loss, io
+from . import loss, io, vis
 
 
 PLOT_FILE_SUFFIX = ".jafit.png"
@@ -26,29 +26,59 @@ CURVE_FILE_SUFFIX = ".jafit.tab"
 
 OUTPUT_SAMPLE_COUNT = 1000
 
-BG_EXECUTOR = ThreadPoolExecutor(max_workers=1)
-"""We only need one worker."""
+
+class LimitedBacklogThreadPoolExecutor(ThreadPoolExecutor):
+    def __init__(self, backlog_capacity: int, *args: Any, **kwargs: Any) -> None:
+        import queue
+
+        super(LimitedBacklogThreadPoolExecutor, self).__init__(*args, **kwargs)
+        # noinspection PyTypeChecker
+        self._work_queue = queue.Queue(maxsize=backlog_capacity)  # type: ignore
+
+
+BG_EXECUTOR = LimitedBacklogThreadPoolExecutor(max_workers=1, backlog_capacity=10)
+"""
+We only need one worker.
+The backlog is limited to manage peak memory utilization (solutions are kept in memory until plotted)
+and to avoid losing much data should the process crash.
+"""
 
 T = TypeVar("T")
 
 
-def make_on_best_callback(file_name_prefix: str, ref: HysteresisLoop) -> Callable[[int, float, Coef, Solution], None]:
+def make_callback(
+    file_name_prefix: str,
+    ref: HysteresisLoop,
+) -> Callable[
+    [int, Coef, tuple[Solution, float] | Exception],
+    None,
+]:
 
-    def cb(epoch: int, loss_value: float, coef: Coef, sol: Solution) -> None:
+    def cb(epoch: int, coef: Coef, result: tuple[Solution, float] | Exception) -> None:
         # Keep in mind that this callback itself may be invoked from a different thread.
         def bg() -> None:
             try:
                 started_at = time.monotonic()
-                plot_file = f"{file_name_prefix}_#{epoch:05}_{loss_value:.6f}_{coef}{PLOT_FILE_SUFFIX}"
-                plot(sol, ref, str(coef), plot_file)
+                plot_file: str | None
+                match result:
+                    case (sol, loss_value) if isinstance(sol, Solution) and isinstance(loss_value, float):
+                        plot_file = f"{file_name_prefix}_#{epoch:05}_{loss_value:.6f}_{coef}{PLOT_FILE_SUFFIX}"
+                        plot(sol, ref, coef, plot_file)
+
+                    case SolverError() as ex if ex.partial_curve is not None:
+                        plot_file = f"{file_name_prefix}_#{epoch:05}_{type(ex).__name__}_{coef}{PLOT_FILE_SUFFIX}"
+                        plot_error(ex, coef, plot_file)
+
+                    case _:
+                        plot_file = None
+
                 _logger.debug("Plotting %r took %.0f ms", plot_file, (time.monotonic() - started_at) * 1e3)
             except Exception as ex:
                 _logger.error("Failed to plot: %s: %s", type(ex).__name__, ex)
                 _logger.debug("Failed to plot: %s", ex, exc_info=True)
 
         # Plotting can take a while, so we do it in a background thread.
-        # We do release the GIL in the solver very often, so this is not a problem.
-        # Also, future Python versions will eventually have proper support for multithreading.
+        # The plotting library will release the GIL.
         BG_EXECUTOR.submit(bg)
 
     return cb
@@ -80,9 +110,9 @@ def do_fit(
         k_p=_perhaps(k_p, 1e3),
         alpha=_perhaps(alpha, 0.001),
     )
-    x_min = Coef(c_r=0, M_s=M_s_min, a=1, k_p=1, alpha=1e-10)
+    x_min = Coef(c_r=1e-10, M_s=M_s_min, a=1, k_p=1, alpha=1e-10)
     # TODO: better way of setting the upper bounds?
-    x_max = Coef(c_r=0.999, M_s=3e6, a=1e4, k_p=1e5, alpha=0.1)
+    x_max = Coef(c_r=0.999999, M_s=3e6, a=1e5, k_p=1e5, alpha=0.2)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
 
     # Ensure the swept H-range is large enough.
@@ -106,9 +136,9 @@ def do_fit(
                 ref,
                 loss.demag_key_points,
                 H_stop_range=H_stop_range,
-                stop_loss=1e-3,  # Fine adjustment is meaningless the loss fun is crude here.
+                stop_loss=0.01,  # Fine adjustment is meaningless the loss fun is crude here.
                 stop_evals=max_evaluations_per_stage,
-                cb_on_best=make_on_best_callback("initial", ref),
+                callback=make_callback("0_initial", ref),
             ),
             tolerance=1e-3,
         )
@@ -126,7 +156,7 @@ def do_fit(
                 loss.nearest,
                 H_stop_range=H_stop_range,
                 stop_evals=max_evaluations_per_stage,
-                cb_on_best=make_on_best_callback("global", ref),
+                callback=make_callback("1_global", ref),
             ),
             tolerance=1e-7,
         )
@@ -141,7 +171,7 @@ def do_fit(
             loss.nearest,
             H_stop_range=H_stop_range,
             stop_evals=max_evaluations_per_stage,
-            cb_on_best=make_on_best_callback("local", ref),
+            callback=make_callback("2_local", ref),
         ),
     )
 
@@ -156,23 +186,43 @@ def do_fit(
     return coef
 
 
-def plot(sol: Solution, ref: HysteresisLoop | None, title: str, plot_file: Path | str) -> None:
-    from .vis import Style, Color, plot_hb
-
+def plot(
+    sol: Solution,
+    ref: HysteresisLoop | None,
+    coef: Coef,
+    plot_file: Path | str,
+    subtitle: str | None = None,
+) -> None:
+    S, C = vis.Style, vis.Color
     loop = sol.loop.decimate(OUTPUT_SAMPLE_COUNT)
     specs = [
-        ("J(H) JA virgin", hm_to_hj(sol.virgin), Style.line, Color.gray),
+        ("J(H) JA virgin", hm_to_hj(sol.virgin), S.line, C.gray),
         (
             "J(H) JA loop",
             np.vstack((hm_to_hj(loop.descending)[::-1], hm_to_hj(loop.ascending))),
-            Style.line,
-            Color.black,
+            S.line,
+            C.black,
         ),
     ]
     if ref:
-        specs.append(("J(H) reference descending", hm_to_hj(ref.descending), Style.scatter, Color.blue))
-        specs.append(("J(H) reference ascending", hm_to_hj(ref.ascending), Style.scatter, Color.red))
-    plot_hb(specs, title, plot_file)
+        specs.append(("J(H) reference descending", hm_to_hj(ref.descending), S.scatter, C.blue))
+        specs.append(("J(H) reference ascending", hm_to_hj(ref.ascending), S.scatter, C.red))
+    title = str(coef)
+    if subtitle:
+        title += f"\n{subtitle}"
+    vis.plot(specs, title, plot_file, axes_labels=("H [A/m]", "B [T]"))
+
+
+def plot_error(ex: SolverError, coef: Coef, plot_file: Path | str) -> None:
+    if ex.partial_curve is None:
+        _logger.debug("No partial curve to plot: %s", ex)
+        return
+    specs = [
+        ("M(H)", ex.partial_curve, vis.Style.line, vis.Color.black),
+    ]
+    title = f"{coef}\n{type(ex).__name__}\n{ex}"
+    vis.plot(specs, title, plot_file, axes_labels=("H [A/m]", "M [A/m]"))
+    _logger.debug("%s max(|dH|)=%s", type(ex).__name__, np.abs(np.diff(ex.partial_curve[:, 0])).max())
 
 
 def run(
@@ -217,7 +267,11 @@ def run(
 
     # Solve with the coefficients and plot the results.
     _logger.info("Solving and plotting: %s", coef)
-    sol = solve(coef, H_stop_range=(min(50e3, H_max), H_max))
+    try:
+        sol = solve(coef, H_stop_range=(min(50e3, H_max), H_max))
+    except SolverError as ex:
+        plot_error(ex, coef, f"{type(ex).__name__}.{coef}{PLOT_FILE_SUFFIX}")
+        raise
     _logger.debug("Solved loop: %s", sol.loop)
 
     # Extract the key parameters from the descending loop.
@@ -225,10 +279,7 @@ def run(
     _logger.info("Predicted parameters: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", H_c, B_r, BH_max)
 
     # noinspection PyTypeChecker
-    title = f"c_r={coef.c_r:.10f} M_s={coef.M_s:.6f} a={coef.a:.6f} k_p={coef.k_p:.6f} alpha={coef.alpha:.10f}"
-    title += f"\nH_c={H_c:.0f} B_r={B_r:.3f} BH_max={BH_max:.0f}"
-    file_name = title.replace("\n", " ")
-    plot(sol, ref, title, f"{file_name}{PLOT_FILE_SUFFIX}")
+    plot(sol, ref, coef, f"{coef}{PLOT_FILE_SUFFIX}", subtitle=f"H_c={H_c:.0f} B_r={B_r:.3f} BH_max={BH_max:.0f}")
 
     # Save the BH curves.
     decimated_loop = sol.loop.decimate(OUTPUT_SAMPLE_COUNT)
@@ -291,7 +342,7 @@ def _setup_logging() -> None:
 
     file_handler = logging.FileHandler("jafit.log", mode="w", encoding="utf-8")
     file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(name)s: %(message)s"))
     logging.getLogger().addHandler(file_handler)
 
     logging.getLogger("numpy").setLevel(logging.WARNING)
