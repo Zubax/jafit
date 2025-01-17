@@ -138,12 +138,16 @@ def solve(
         retry = 0
         while True:
             try:
-                return once()
+                result = once()
             except ConvergenceError as ex:
                 retry += 1
                 if retry >= _MAX_ATTEMPTS:
                     raise
-                _logger.debug("Retrying the sweep [attempt #%d] due to %s: %s", retry, type(ex).__name__, ex)
+                _logger.debug("Retrying #%d sign %+d %s due to %s: %s", retry, sign, coef, type(ex).__name__, ex)
+            else:
+                if retry > 0:
+                    _logger.debug("Retry #%d sign %+d successful: %s", retry, sign, coef)
+                return result
 
     hm_virgin = do_sweep(0, 0, +1)
 
