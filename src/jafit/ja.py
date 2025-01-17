@@ -192,12 +192,12 @@ def _sweep(
     # Hence, it appears to be necessary to employ implicit methods. Note though that we sweep H back and forth
     # manually, so our overall approach perhaps should be called semi-implicit.
     # noinspection PyUnresolvedReferences
-    solver = scipy.integrate.BDF(
+    solver = scipy.integrate.Radau(  # Radau seems to be marginally more stable than BDF?
         rhs,
         H0,
         np.array([M0], dtype=np.float64),
         t_bound=H_stop_range[1] * sign,
-        max_step=1000 / 10**retry,  # Max step must small always; larger steps are more likely to blow up
+        max_step=1000 / 10**retry,  # Max step must be small always; larger steps are more likely to blow up
         rtol=0.001 * 10**retry,  # Dominates at strong magnetization
         atol=0.01 * 10**retry,  # Dominates at weak magnetization
     )
