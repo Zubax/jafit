@@ -1,5 +1,7 @@
 # jafit
 
+[![Discuss - on Zubax Forum](https://img.shields.io/static/v1?label=Discuss&message=on+Zubax+Forum&color=ff0000)](https://forum.zubax.com)
+
 Jiles-Atherton system identification tool: Given a BH curve, finds the Jiles-Atherton model coefficients.
 
 <img src="image.png" width="800" alt="">
