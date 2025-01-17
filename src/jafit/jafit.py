@@ -11,7 +11,7 @@ import sys
 import time
 import dataclasses
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, TypeVar, Iterable
+from typing import Callable, TypeVar, Iterable, Any
 import logging
 from pathlib import Path
 import numpy as np
@@ -26,8 +26,22 @@ CURVE_FILE_SUFFIX = ".jafit.tab"
 
 OUTPUT_SAMPLE_COUNT = 1000
 
-BG_EXECUTOR = ThreadPoolExecutor(max_workers=1)
-"""We only need one worker."""
+
+class LimitedBacklogThreadPoolExecutor(ThreadPoolExecutor):
+    def __init__(self, backlog_capacity: int, *args: Any, **kwargs: Any) -> None:
+        import queue
+
+        super(LimitedBacklogThreadPoolExecutor, self).__init__(*args, **kwargs)
+        # noinspection PyTypeChecker
+        self._work_queue = queue.Queue(maxsize=backlog_capacity)  # type: ignore
+
+
+BG_EXECUTOR = LimitedBacklogThreadPoolExecutor(max_workers=1, backlog_capacity=10)
+"""
+We only need one worker.
+The backlog is limited to manage peak memory utilization (solutions are kept in memory until plotted)
+and to avoid losing much data should the process crash.
+"""
 
 T = TypeVar("T")
 
