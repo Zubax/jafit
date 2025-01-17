@@ -126,7 +126,7 @@ def do_fit(
     ), float(H_max)
     _logger.info("H amplitude range: %s [A/m]", H_stop_range)
 
-    if (H_c > 1 and B_r > 0.01) and skip_stages < 1:
+    if (H_c > 100 and B_r > 0.1) and skip_stages < 1:
         _logger.info("Demag knee detected; performing initial H_c|B_r|BH_max optimization")
         coef = fit_global(
             x_0=coef,
