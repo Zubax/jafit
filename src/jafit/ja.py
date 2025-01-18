@@ -100,9 +100,6 @@ class Solution:
     loop: HysteresisLoop
 
 
-_MAX_ATTEMPTS = 3
-
-
 def solve(
     coef: Coef,
     *,
@@ -131,30 +128,14 @@ def solve(
     """
 
     def do_sweep(H0: float, M0: float, sign: int) -> npt.NDArray[np.float64]:
-        def once() -> npt.NDArray[np.float64]:
-            return _sweep(
-                coef,
-                H0=H0,
-                M0=M0,
-                sign=sign,
-                saturation_susceptibility=saturation_susceptibility,
-                H_stop_range=H_stop_range,
-                retry=retry,
-            )
-
-        retry = 0
-        while True:
-            try:
-                result = once()
-            except ConvergenceError as ex:
-                retry += 1
-                if retry >= _MAX_ATTEMPTS:
-                    raise
-                _logger.debug("Retrying #%d sign %+d %s due to %s: %s", retry, sign, coef, type(ex).__name__, ex)
-            else:
-                if retry > 0:
-                    _logger.debug("Retry #%d sign %+d successful: %s", retry, sign, coef)
-                return result
+        return _sweep(
+            coef,
+            H0=H0,
+            M0=M0,
+            sign=sign,
+            saturation_susceptibility=saturation_susceptibility,
+            H_stop_range=H_stop_range,
+        )
 
     hm_virgin = do_sweep(0, 0, +1)
 
@@ -185,16 +166,14 @@ def _sweep(
     sign: int,
     saturation_susceptibility: float,
     H_stop_range: tuple[float, float],
-    retry: int,
     save_delta: npt.NDArray[np.float64] = np.array([3.0, 1.0], dtype=np.float64),
+    tolerance_loosening_factor: float = 10.0,
+    worst_relative_tolerance: float = 0.02,
 ) -> npt.NDArray[np.float64]:
     assert sign in (-1, +1)
     assert save_delta.shape == (2,)
-    c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
-
-    def rhs(x: float, y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
-        z = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=x, M=float(y[0]), direction=sign)
-        return np.array([z], dtype=np.float64)
+    assert 0 < worst_relative_tolerance < 1
+    H_bound = H_stop_range[1] * sign
 
     # Initially, I tried solving this equation using explicit methods, specifically RK4 and Dormand-Prince (RK45)
     # (see the git history for details).
@@ -202,19 +181,23 @@ def _sweep(
     # materials, like certain AlNiCo grades, which causes explicit solvers to diverge even at very fine steps.
     # Hence, it appears to be necessary to employ implicit methods. Note though that we sweep H back and forth
     # manually, so our overall approach perhaps should be called semi-implicit.
-    # noinspection PyUnresolvedReferences
-    solver = scipy.integrate.Radau(  # Radau seems to be marginally more stable than BDF?
-        rhs,
-        H0,
-        np.array([M0], dtype=np.float64),
-        t_bound=H_stop_range[1] * sign,
-        max_step=1e3 / 10**retry,  # Max step must be small always; larger steps are more likely to blow up
-        rtol=1e-5 * 30**retry,  # Dominates at strong magnetization; must be <0.01 to avoid bad solutions
-        atol=1e-3 * 10**retry,  # Dominates at weak magnetization; must be <0.1 to avoid bad solutions
-    )  # tolerance=rtol*M+atol
+    #
+    # Here we implement an adaptive tolerance method which I am very pleased with: we start out with a good tolerance
+    # setting and try solving the equation. If the solver fails to converge due to stiffness at some point,
+    # we loosen the tolerance a little and try to continue. If it fails again, we worsen the tolerance further and
+    # rollback to the last known good point achieved with the original best tolerance.
+    # The reason we need the rollback is that every time we switch the settings we discard the solver state,
+    # which may result in discontinuities in the solution, so it is desirable to keep the switching points to
+    # the minimum, which is one.
+    #
+    # Ideally, we should be able to adjust the tolerance on the go without discarding the solver, but the SciPy API
+    # does not seem to support this, and I don't have the time to roll out my own implicit solver.
+    rtol, atol = 1e-6, 1e-3
+    solver = _make_solver(coef, H0, M0, H_bound, rtol=rtol, atol=atol)
     hm = np.empty((10**8, 2), dtype=np.float64)
     hm[0] = H0, M0
     idx = 1
+    checkpoint: tuple[int, float, float] | None = None
     while solver.status == "running":
         H_old, M_old = solver.t, solver.y[0]
         try:
@@ -226,16 +209,40 @@ def _sweep(
             _logger.warning("Stopping the sweep early: %s", msg)
             _logger.debug("Stack trace for the above error", exc_info=True)
             break
+
         if solver.status not in ("running", "finished"):
-            raise ConvergenceError(
-                f"#{idx*sign:+06d} {H0=:+012.3f} {M0=:+012.3f} H={H_old:+012.3f} M={M_old:+012.3f}: {msg}",
-                partial_curve=hm[:idx],
+            _logger.debug(
+                "Solver failure at idx=%+07d H=%+018.9f M=%+018.9f with rtol=%.1e atol=%.1e."
+                " Rollback checkpoint is %s."
+                " Error message was: %s",
+                idx * sign,
+                H_old,
+                M_old,
+                rtol,
+                atol,
+                checkpoint,
+                msg,
             )
+            rtol *= tolerance_loosening_factor
+            atol *= tolerance_loosening_factor
+            if rtol > worst_relative_tolerance:  # Give up, it's hopeless
+                raise ConvergenceError(
+                    f"#{idx * sign:+06d} {H0=:+012.3f} {M0=:+012.3f} H={H_old:+012.3f} M={M_old:+012.3f}: {msg}",
+                    partial_curve=hm[:idx],
+                )
+            if checkpoint is None:
+                checkpoint = idx, float(H_old), float(M_old)  # If it fails again, rollback to this point
+            else:
+                idx, H_old, M_old = checkpoint
+            solver = _make_solver(coef, H_old, M_old, H_bound, rtol=rtol, atol=atol)
+            continue
+
         mew = solver.t, solver.y[0]
         if np.any(np.abs(hm[idx - 1] - mew) > save_delta):
             hm[idx] = mew
             idx += 1
         H_new, M_new = mew
+
         # Terminate sweep early if the material is already saturated.
         chi = abs((M_new - M_old) / (H_new - H_old)) if abs(H_new - H_old) > 1e-10 else np.inf
         if H_new * sign >= H_stop_range[0] and chi < saturation_susceptibility:
@@ -246,7 +253,43 @@ def _sweep(
         hm[idx] = mew
         idx += 1
 
+    if checkpoint is not None:
+        _logger.debug("Solved with degraded tolerance due to great stiffness: rtol=%.1e atol=%.1e", rtol, atol)
+
     return hm[:idx]
+
+
+# noinspection PyUnresolvedReferences
+def _make_solver(
+    coef: Coef,
+    H0: float,
+    M0: float,
+    H_bound: float,
+    rtol: float,
+    atol: float,
+) -> scipy.integrate.OdeSolver:
+    """
+    tolerance=rtol*M+atol; rtol dominates at strong magnetization, atol dominates at weak magnetization.
+    """
+    c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
+    sign = int(np.sign(H_bound))
+
+    def rhs(x: float, y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        z = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=x, M=float(y[0]), direction=sign)
+        return np.array([z], dtype=np.float64)
+
+    first_step = np.finfo(np.float64).eps * 10 * np.abs((H0, M0, 1)).max()
+
+    return scipy.integrate.Radau(  # Radau seems to be marginally more stable than BDF?
+        rhs,
+        H0,
+        np.array([M0], dtype=np.float64),
+        first_step=first_step,
+        t_bound=H_bound,
+        max_step=1e3,  # Max step must be small always; larger steps are more likely to blow up
+        rtol=rtol,  # Dominates at strong magnetization; must be <0.01 to avoid bad solutions
+        atol=atol,  # Dominates at weak magnetization; must be <0.1 to avoid bad solutions
+    )
 
 
 @njit
