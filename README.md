@@ -91,3 +91,11 @@ jafit c_r=0.5 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001
 ```
 
 <img src="validation/hysteresis c_r=0.5 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="400px" alt="">  
+
+### Specimen D
+
+```shell
+jafit c_r=0.1 M_s=1191941.07155 a=65253 k_p=85677 alpha=0.19
+```
+
+<img src="validation/hysteresis c_r=0.1 M_s=1191941.07155 a=65253 k_p=85677 alpha=0.19.png" width="400px" alt="">  
