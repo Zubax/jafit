@@ -121,8 +121,13 @@ def solve(
 
     Some of the coefficients sets result in great stiffness;
     they are provided here for testing and illustration purposes.
+    The solver is expected to manage that by dynamically adjusting the tolerance bounds.
 
     >>> stiff = Coef(c_r=0.956886485630692230, M_s=2956870.912007416, a=025069.875361107, k_p=019498.206218542, alpha=0.181220196232252662)
+    >>> solve(stiff)  # doctest: +ELLIPSIS
+    Solution(...)
+
+    >>> stiff = Coef(c_r=0.1, M_s=1191941.07155, a=65253, k_p=85677, alpha=0.19)
     >>> solve(stiff)  # doctest: +ELLIPSIS
     Solution(...)
     """
