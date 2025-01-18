@@ -105,6 +105,34 @@ def do_fit(
     M_s_min = B_r / mu_0  # Heuristic: B=mu_0*(H+M); H=0; B=mu_0*M; hence, M_s>=B_r/mu_0
     _logger.info("Derived minimum M_s: %.6f A/m", M_s_min)
 
+    # Interpolate the reference curve such that the sample points are equally spaced to improve the
+    # behavior of the nearest-point loss function. This is not needed for the other loss functions.
+    ref_original = ref
+    ref = ref.interpolate_equidistant(100)
+
+    # Display the interpolation result for diagnostics and visibility.
+    vis.plot(
+        [
+            ("J(H) interpolated descending", hm_to_hj(ref.descending), vis.Style.scatter, vis.Color.blue),
+            ("J(H) interpolated ascending", hm_to_hj(ref.ascending), vis.Style.scatter, vis.Color.black),
+            ("J(H) original descending", hm_to_hj(ref_original.descending), vis.Style.scatter, vis.Color.red),
+            ("J(H) original ascending", hm_to_hj(ref_original.ascending), vis.Style.scatter, vis.Color.red),
+        ],
+        "Reference curve interpolation",
+        f"reference_interpolation{PLOT_FILE_SUFFIX}",
+        axes_labels=("H [A/m]", "B [T]"),
+    )
+
+    # Ensure the interpolation did not cause nontrivial distortion.
+    interp_H_c, interp_B_r, interp_BH_max = extract_H_c_B_r_BH_max(ref.descending)
+    _logger.debug(
+        "After interpolation: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", interp_H_c, interp_B_r, interp_BH_max
+    )
+    assert np.isclose(interp_H_c, H_c, rtol=0.1, atol=1e-3), f"{interp_H_c} != {H_c}"
+    assert np.isclose(interp_B_r, B_r, rtol=0.1, atol=1e-3), f"{interp_B_r} != {B_r}"
+    assert np.isclose(interp_BH_max, BH_max, rtol=0.1, atol=1e-3), f"{interp_BH_max} != {BH_max}"
+
+    # Initialize the coefficients and their bounds.
     coef = Coef(
         c_r=_perhaps(c_r, 1e-6),
         M_s=_perhaps(M_s, M_s_min * 1.001),  # Optimizers tend to be unstable if parameters are too close to the bounds

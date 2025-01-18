@@ -41,6 +41,7 @@ def magnetization(ref: HysteresisLoop, sol: HysteresisLoop, *, lattice_size: int
     for every H in the regular lattice of the specified size n on every branch.
     Both curves are interpolated using the PCHIP method (piecewise monotonic cubic non-overshooting).
     The computed loss values per loop branch are averaged.
+
     Normalization is not needed because both coordinates are in the same units [A/m];
     this is also the dimension of the computed loss value.
     """
@@ -66,8 +67,15 @@ def nearest(ref: HysteresisLoop, sol: HysteresisLoop) -> float:
     """
     Dissimilarity metric that computes the RMS distance between each point of the reference H(M) curves and the
     nearest point on the solution H(M) curves. The computed loss values per loop branch are averaged.
+
+    For this function to work well, the points in the reference curve should be spaced more or less uniformly;
+    otherwise, the loss will be dominated by the regions with higher point density. One way to ensure this is to
+    perform spline interpolation using ``interpolate_spline_equidistant()`` before calling this function.
+    The number of sample points should usually be somewhere between 100..1000, depending on the complexity of the shape.
+
     Normalization is not needed because both coordinates are in the same units [A/m];
     this is also the dimension of the computed loss value.
+
     The computational complexity is high, not recommended for large datasets without prior downsampling.
     """
     loss: list[np.float64] = []

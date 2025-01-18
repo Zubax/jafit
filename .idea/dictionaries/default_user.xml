@@ -13,6 +13,7 @@
       <w>ftol</w>
       <w>gtol</w>
       <w>interdomain</w>
+      <w>interpolant</w>
       <w>kirienko</w>
       <w>langevin</w>
       <w>maxiter</w>
