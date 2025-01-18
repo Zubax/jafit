@@ -108,23 +108,25 @@ def do_fit(
     # Interpolate the reference curve such that the sample points are equally spaced to improve the
     # behavior of the nearest-point loss function. This is not needed for the other loss functions.
     ref_original = ref
-    ref = ref.interpolate_equidistant(100)
+    ref_interpolated = ref.interpolate_equidistant(300)
+    del ref
 
     # Display the interpolation result for diagnostics and visibility.
     vis.plot(
         [
-            ("J(H) interpolated descending", hm_to_hj(ref.descending), vis.Style.scatter, vis.Color.blue),
-            ("J(H) interpolated ascending", hm_to_hj(ref.ascending), vis.Style.scatter, vis.Color.black),
-            ("J(H) original descending", hm_to_hj(ref_original.descending), vis.Style.scatter, vis.Color.red),
-            ("J(H) original ascending", hm_to_hj(ref_original.ascending), vis.Style.scatter, vis.Color.red),
+            ("M(H) interpolated descending", ref_interpolated.descending, vis.Style.scatter, vis.Color.blue),
+            ("M(H) interpolated ascending", ref_interpolated.ascending, vis.Style.scatter, vis.Color.black),
+            ("M(H) original descending", ref_original.descending, vis.Style.scatter, vis.Color.red),
+            ("M(H) original ascending", ref_original.ascending, vis.Style.scatter, vis.Color.red),
         ],
         "Reference curve interpolation",
         f"reference_interpolation{PLOT_FILE_SUFFIX}",
         axes_labels=("H [A/m]", "B [T]"),
+        square_aspect_ratio=True,  # Same aspect ratio is required to check that the points are equidistant.
     )
 
     # Ensure the interpolation did not cause nontrivial distortion.
-    interp_H_c, interp_B_r, interp_BH_max = extract_H_c_B_r_BH_max(ref.descending)
+    interp_H_c, interp_B_r, interp_BH_max = extract_H_c_B_r_BH_max(ref_interpolated.descending)
     _logger.debug(
         "After interpolation: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", interp_H_c, interp_B_r, interp_BH_max
     )
@@ -149,7 +151,7 @@ def do_fit(
     # This is to ensure that the saturation detection heuristic does not mistakenly terminate the sweep too early.
     H_stop_range = float(
         max(
-            np.max(np.abs(ref.H_range)),
+            np.max(np.abs(ref_original.H_range)),
             H_c * 2,
             M_s_min * 0.1,
         )
@@ -163,12 +165,12 @@ def do_fit(
             x_min=x_min,
             x_max=x_max,
             obj_fn=make_objective_function(
-                ref,
+                ref_original,  # Here we're using the non-interpolated curve.
                 loss.demag_key_points,
                 H_stop_range=H_stop_range,
                 stop_loss=0.01,  # Fine adjustment is meaningless the loss fun is crude here.
                 stop_evals=max_evaluations_per_stage,
-                callback=make_callback("0_initial", ref, plot_failed=plot_failed),
+                callback=make_callback("0_initial", ref_original, plot_failed=plot_failed),
             ),
             tolerance=1e-3,
         )
@@ -182,11 +184,11 @@ def do_fit(
             x_min=x_min,
             x_max=x_max,
             obj_fn=make_objective_function(
-                ref,
+                ref_interpolated,
                 loss.nearest,
                 H_stop_range=H_stop_range,
                 stop_evals=max_evaluations_per_stage,
-                callback=make_callback("1_global", ref, plot_failed=plot_failed),
+                callback=make_callback("1_global", ref_interpolated, plot_failed=plot_failed),
             ),
             tolerance=1e-7,
         )
@@ -197,11 +199,11 @@ def do_fit(
         x_min=x_min,
         x_max=x_max,
         obj_fn=make_objective_function(
-            ref,
+            ref_interpolated,
             loss.nearest,
             H_stop_range=H_stop_range,
             stop_evals=max_evaluations_per_stage,
-            callback=make_callback("2_local", ref, plot_failed=plot_failed),
+            callback=make_callback("2_local", ref_interpolated, plot_failed=plot_failed),
         ),
     )
 
