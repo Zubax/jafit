@@ -3,9 +3,8 @@
 from logging import getLogger
 import numpy as np
 import numpy.typing as npt
-import scipy.interpolate
 from .mag import extract_H_c_B_r_BH_max, HysteresisLoop
-from .util import njit
+from .util import njit, interpolate
 
 
 def demag_key_points(ref: HysteresisLoop, sol: HysteresisLoop, *, eps: float = 1e-9) -> float:
@@ -48,10 +47,9 @@ def magnetization(ref: HysteresisLoop, sol: HysteresisLoop, *, lattice_size: int
     H_range = max(ref.H_range[0], sol.H_range[0]), min(ref.H_range[1], sol.H_range[1])
     H_lattice = np.linspace(*H_range, lattice_size)
 
-    # noinspection PyUnresolvedReferences
     def loss(hm_ref: npt.NDArray[np.float64], hm_sol: npt.NDArray[np.float64]) -> float:
-        M_ref = scipy.interpolate.PchipInterpolator(hm_ref[:, 0], hm_ref[:, 1])(H_lattice)
-        M_sol = scipy.interpolate.PchipInterpolator(hm_sol[:, 0], hm_sol[:, 1])(H_lattice)
+        M_ref = interpolate(H_lattice, hm_ref)
+        M_sol = interpolate(H_lattice, hm_sol)
         return float(np.sqrt(np.mean((M_ref - M_sol) ** 2)))
 
     loss_values = []
