@@ -49,6 +49,7 @@ T = TypeVar("T")
 def make_callback(
     file_name_prefix: str,
     ref: HysteresisLoop,
+    plot_failed: bool = True,
 ) -> Callable[
     [int, Coef, tuple[Solution, float] | Exception],
     None,
@@ -65,7 +66,7 @@ def make_callback(
                         plot_file = f"{file_name_prefix}_#{epoch:05}_{loss_value:.6f}_{coef}{PLOT_FILE_SUFFIX}"
                         plot(sol, ref, coef, plot_file)
 
-                    case SolverError() as ex if ex.partial_curve is not None:
+                    case SolverError() as ex if ex.partial_curve is not None and plot_failed:
                         plot_file = f"{file_name_prefix}_#{epoch:05}_{type(ex).__name__}_{coef}{PLOT_FILE_SUFFIX}"
                         plot_error(ex, coef, plot_file)
 
@@ -95,6 +96,7 @@ def do_fit(
     H_max: float,
     max_evaluations_per_stage: int,
     skip_stages: int,
+    plot_failed: bool,
 ) -> Coef:
     if len(ref.descending) == 0:
         raise ValueError("The reference descending curve is empty")
@@ -138,7 +140,7 @@ def do_fit(
                 H_stop_range=H_stop_range,
                 stop_loss=0.01,  # Fine adjustment is meaningless the loss fun is crude here.
                 stop_evals=max_evaluations_per_stage,
-                callback=make_callback("0_initial", ref),
+                callback=make_callback("0_initial", ref, plot_failed=plot_failed),
             ),
             tolerance=1e-3,
         )
@@ -156,7 +158,7 @@ def do_fit(
                 loss.nearest,
                 H_stop_range=H_stop_range,
                 stop_evals=max_evaluations_per_stage,
-                callback=make_callback("1_global", ref),
+                callback=make_callback("1_global", ref, plot_failed=plot_failed),
             ),
             tolerance=1e-7,
         )
@@ -171,7 +173,7 @@ def do_fit(
             loss.nearest,
             H_stop_range=H_stop_range,
             stop_evals=max_evaluations_per_stage,
-            callback=make_callback("2_local", ref),
+            callback=make_callback("2_local", ref, plot_failed=plot_failed),
         ),
     )
 
@@ -236,6 +238,7 @@ def run(
     H_max: float = 3e6,
     effort: int = 10**7,
     skip_stages: int = 0,
+    plot_failed: bool = False,
     **named_args: dict[str, int | float | str],
 ) -> None:
     if unnamed_args or named_args:
@@ -246,6 +249,9 @@ def run(
     }
     H_max = float(H_max)
     effort = int(effort)
+    effort = int(effort)
+    skip_stages = int(skip_stages)
+    plot_failed = bool(plot_failed)
 
     ref = io.load(Path(ref_file_path)) if ref_file_path else None
     if ref is not None:
@@ -256,6 +262,7 @@ def run(
             H_max=H_max,
             max_evaluations_per_stage=effort,
             skip_stages=skip_stages,
+            plot_failed=plot_failed,
         )
         # noinspection PyTypeChecker
         print(*(f"{k}={v}" for k, v in dataclasses.asdict(coef).items()))
