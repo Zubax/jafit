@@ -3,6 +3,7 @@
 from logging import getLogger
 import numpy as np
 import numpy.typing as npt
+import scipy.interpolate
 from .mag import extract_H_c_B_r_BH_max, HysteresisLoop
 from .util import njit
 
@@ -39,17 +40,18 @@ def magnetization(ref: HysteresisLoop, sol: HysteresisLoop, *, lattice_size: int
     """
     The ordinary dissimilarity metric that computes sqrt(sum(( M_ref(H)-M_sol(H) )**2)/n)
     for every H in the regular lattice of the specified size n on every branch.
+    Both curves are interpolated using the PCHIP method (piecewise monotonic cubic non-overshooting).
     The computed loss values per loop branch are averaged.
     Normalization is not needed because both coordinates are in the same units [A/m];
     this is also the dimension of the computed loss value.
-    Computationally this is very cheap.
     """
     H_range = max(ref.H_range[0], sol.H_range[0]), min(ref.H_range[1], sol.H_range[1])
     H_lattice = np.linspace(*H_range, lattice_size)
 
+    # noinspection PyUnresolvedReferences
     def loss(hm_ref: npt.NDArray[np.float64], hm_sol: npt.NDArray[np.float64]) -> float:
-        M_ref = np.interp(H_lattice, hm_ref[:, 0], hm_ref[:, 1])
-        M_sol = np.interp(H_lattice, hm_sol[:, 0], hm_sol[:, 1])
+        M_ref = scipy.interpolate.PchipInterpolator(hm_ref[:, 0], hm_ref[:, 1])(H_lattice)
+        M_sol = scipy.interpolate.PchipInterpolator(hm_sol[:, 0], hm_sol[:, 1])(H_lattice)
         return float(np.sqrt(np.mean((M_ref - M_sol) ** 2)))
 
     loss_values = []
