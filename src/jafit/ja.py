@@ -156,22 +156,36 @@ def solve(
     H_last, M_last = hm_maj_dsc[-1]
     hm_maj_asc = do_sweep(H_last, M_last, +1)
 
-    loop = HysteresisLoop(descending=hm_maj_dsc[::-1], ascending=hm_maj_asc)
+    loop = _construct_loop(hm_maj_dsc, hm_maj_asc, balancing_rtol=balancing_rtol)
+    return Solution(virgin=hm_virgin, loop=loop)
+
+
+def _construct_loop(
+    hm_dsc: npt.NDArray[np.float64],
+    hm_asc: npt.NDArray[np.float64],
+    /,
+    balancing_rtol: float,
+) -> HysteresisLoop:
+    loop = HysteresisLoop(descending=hm_dsc[::-1], ascending=hm_asc)
     assert loop.descending[0, 0] < loop.descending[-1, 0]
     assert loop.ascending[0, 0] < loop.ascending[-1, 0]
 
-    do_balance = (
-        (loop.descending[0, 0] < 0 < loop.descending[-1, 0] and loop.descending[0, 1] < 0 < loop.descending[-1, 1])
-        and (loop.ascending[0, 0] < 0 < loop.ascending[-1, 0] and loop.ascending[0, 1] < 0 < loop.ascending[-1, 1])
-        and relative_distance(loop.descending[0], loop.ascending[0]) < balancing_rtol
-        and relative_distance(loop.descending[-1], loop.ascending[-1]) < balancing_rtol
-    )
-    if do_balance:
+    dsc_full = loop.descending[0, 0] < 0 < loop.descending[-1, 0] and loop.descending[0, 1] < 0 < loop.descending[-1, 1]
+    asc_full = loop.ascending[0, 0] < 0 < loop.ascending[-1, 0] and loop.ascending[0, 1] < 0 < loop.ascending[-1, 1]
+    loop_full = dsc_full and asc_full
+
+    dsc_symmetric = relative_distance(loop.descending[0], -loop.descending[-1]) < balancing_rtol
+    asc_symmetric = relative_distance(loop.ascending[0], -loop.ascending[-1]) < balancing_rtol
+    asc_dsc_close = relative_distance(loop.descending[-1], loop.ascending[-1]) < balancing_rtol
+    assert relative_distance(loop.descending[0], loop.ascending[0]) < 1e-3, "Loop branches are expected to share H_min"
+    loop_symmetric = dsc_symmetric and asc_symmetric and asc_dsc_close
+
+    if loop_full and loop_symmetric:
         loop = loop.balance()
     else:
-        _logger.debug("The loop will not be balanced, returning as-is: %s", loop)
+        _logger.debug("The loop does not meet the balancing preconditions:\n%s", loop)
 
-    return Solution(virgin=hm_virgin, loop=loop)
+    return loop
 
 
 def _sweep(
