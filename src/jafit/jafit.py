@@ -310,7 +310,7 @@ def run(
     # Solve with the coefficients and plot the results.
     _logger.info("Solving and plotting: %s", coef)
     if H_min < 1e-9:
-        H_min = max(coef.k_p * 2, 50e3)  # For soft materials, k_p≈H_ci; this is a good guess for H_min.
+        H_min = max(coef.k_p * 2, 100e3)  # For soft materials, k_p≈H_ci; this is a good guess for H_min.
     H_stop_range = H_min, H_max
     try:
         sol = solve(coef, H_stop_range=H_stop_range)
