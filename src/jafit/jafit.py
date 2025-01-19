@@ -267,7 +267,7 @@ def run(
     a: float | None = None,
     k_p: float | None = None,
     alpha: float | None = None,
-    H_max: float = 3e6,
+    H_max: float = 5e6,
     effort: int = 10**7,
     skip_stages: int = 0,
     plot_failed: bool = False,
