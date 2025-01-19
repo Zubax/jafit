@@ -339,8 +339,8 @@ def _dL_dx(x: float) -> float:
     # Danger! The small-value threshold has to be large here because the subsequent full form is very sensitive!
     if np.abs(x) < 1e-4:  # series expansion of L(x) ~ x/3 -> derivative ~ 1/3 near zero
         return 1.0 / 3.0
-    if np.abs(x) > 300:
-        # sinh(x) overflows float64 at x>~700, sinh(x)**2 overflows at x>~355;
+    if np.abs(x) > 355:
+        # sinh(x) overflows float64 at x>710, sinh(x)**2 overflows at x>355;
         # in this case, apply approximation: the first term vanishes as -1/inf=0
         return 1.0 / (x**2)
     # exact expression: -csch^2(x) + 1/x^2
