@@ -170,17 +170,26 @@ def _construct_loop(
     assert loop.descending[0, 0] < loop.descending[-1, 0]
     assert loop.ascending[0, 0] < loop.ascending[-1, 0]
 
+    # Ensure both curves include positive and negative H and M values.
     dsc_full = loop.descending[0, 0] < 0 < loop.descending[-1, 0] and loop.descending[0, 1] < 0 < loop.descending[-1, 1]
     asc_full = loop.ascending[0, 0] < 0 < loop.ascending[-1, 0] and loop.ascending[0, 1] < 0 < loop.ascending[-1, 1]
     loop_full = dsc_full and asc_full
 
+    # Ensure the endpoints of the curves are symmetric around the origin,
+    # and the ascending curves ends near the starting point of the descending curve.
     dsc_symmetric = relative_distance(loop.descending[0], -loop.descending[-1]) < balancing_rtol
     asc_symmetric = relative_distance(loop.ascending[0], -loop.ascending[-1]) < balancing_rtol
     asc_dsc_close = relative_distance(loop.descending[-1], loop.ascending[-1]) < balancing_rtol
     assert relative_distance(loop.descending[0], loop.ascending[0]) < 1e-3, "Loop branches are expected to share H_min"
     loop_symmetric = dsc_symmetric and asc_symmetric and asc_dsc_close
 
-    if loop_full and loop_symmetric:
+    # Non-monotonic M is suspicious, but not necessarily an error.
+    # Avoid balancing to avoid destruction of potentially useful data.
+    dsc_M_monotonic = np.all(np.diff(loop.descending[:, 1]) >= 0)
+    asc_M_monotonic = np.all(np.diff(loop.ascending[:, 1]) >= 0)
+    M_monotonic = dsc_M_monotonic and asc_M_monotonic
+
+    if loop_full and loop_symmetric and M_monotonic:
         loop = loop.balance()
     else:
         _logger.debug("The loop does not meet the balancing preconditions:\n%s", loop)
