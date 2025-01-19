@@ -193,7 +193,7 @@ def _sweep(
         rtol, atol, max_step = [x * 100 for x in (rtol, atol, max_step)]
 
     solver = _make_solver(coef, H0, M0, H_bound, rtol=rtol, atol=atol, max_step=max_step)
-    hm = np.empty((10**8, 2), dtype=np.float64)
+    hm = np.empty((10**7, 2), dtype=np.float64)
     hm[0] = H0, M0
     idx = 1
     checkpoint: tuple[int, float, float] | None = None

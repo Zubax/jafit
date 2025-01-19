@@ -77,14 +77,14 @@ def make_objective_function(
             _logger.warning("#%05d ❌ %6.3fs: %s %s", this_epoch, elapsed, c, error)
         else:
             _logger.info(
-                "#%05d %s %6.3fs: %s loss=%.6f t_loss=%.3f pts=%.0fk",
+                "#%05d %s %6.3fs: %s loss=%.6f t_loss=%.3f pts=%d",
                 this_epoch,
                 "🔵💚"[is_best],
                 elapsed,
                 c,
                 loss,
                 elapsed_loss,
-                (len(sol.descending) + len(sol.ascending)) * 1e-3 if sol else 0,
+                (len(sol.descending) + len(sol.ascending)) if sol else 0,
             )
         if is_best and sol:
             callback(this_epoch, c, (sol, loss))
