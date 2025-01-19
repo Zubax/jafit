@@ -169,7 +169,7 @@ def fit_local(
         # The default finite differences step size used by L-BFGS-B is too small for this problem.
         # Since this is the final local optimization, we do not expect the arguments to stray far from x_0.
         diff_eps = np.maximum(np.abs(v_0) * 1e-6, 1e-9)
-        tol = 1e-15  # With the default tolerance, the optimizer tends to stop prematurely.
+        tol = 1e-12  # With the default tolerance, the optimizer tends to stop prematurely.
         _logger.info("Gradient-based local optimization: x_0=%s, diff_eps=%s", x_0, diff_eps)
         # https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html; "tol" sets "ftol" but not "gtol"
         res = opt.minimize(
@@ -177,7 +177,7 @@ def fit_local(
         )
     else:
         _logger.info("Gradient-free local optimization: x_0=%s", x_0)
-        tol = 1e-15
+        tol = 1e-12
         # https://docs.scipy.org/doc/scipy/reference/optimize.minimize-neldermead.html; "tol" sets "fatol" and "xatol"
         res = opt.minimize(
             fun, v_0, method="Nelder-Mead", bounds=bounds, callback=cb, tol=tol, options={"maxiter": maxiter}
