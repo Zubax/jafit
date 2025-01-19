@@ -140,10 +140,10 @@ def do_fit(
 
     # Initialize the coefficients and their bounds.
     coef = Coef(
-        c_r=_perhaps(c_r, 1e-6),
+        c_r=_perhaps(c_r, 0.1),
         M_s=_perhaps(M_s, M_s_min * 1.001),  # Optimizers tend to be unstable if parameters are too close to the bounds
         a=_perhaps(a, 1e3),
-        k_p=_perhaps(k_p, 1e3),
+        k_p=_perhaps(k_p, max(H_c, 1.0)),  # For soft materials, k_p≈H_ci. For others this is still a good guess.
         alpha=_perhaps(alpha, 0.001),
     )
     x_min = Coef(c_r=1e-9, M_s=M_s_min, a=1e-6, k_p=1e-6, alpha=1e-9)

@@ -39,6 +39,9 @@ class Coef:
         k_p     pinning loss                                                        non-negative    ampere/meter
         alpha   interdomain coupling                                                non-negative    dimensionless
 
+    For soft materials, k_p is approximately equal to the intrinsic coercivity H_ci.
+    During fitting, it is a good idea to start with k_p≈H_c.
+
     Large values of alpha may undermine the numerical stability of the solver because it may cause small denominators
     to occur during the dM/dH computation.
     """
