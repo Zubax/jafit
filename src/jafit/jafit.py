@@ -229,12 +229,8 @@ def plot(
     loop = sol.loop.decimate(OUTPUT_SAMPLE_COUNT)
     specs = [
         ("J(H) JA virgin", hm_to_hj(sol.virgin), S.line, C.gray),
-        (
-            "J(H) JA loop",
-            np.vstack((hm_to_hj(loop.descending)[::-1], hm_to_hj(loop.ascending))),
-            S.line,
-            C.black,
-        ),
+        ("J(H) JA descending", hm_to_hj(loop.descending), S.line, C.black),
+        ("J(H) JA ascending", hm_to_hj(loop.ascending), S.line, C.black),
     ]
     if ref:
         specs.append(("J(H) reference descending", hm_to_hj(ref.descending), S.scatter, C.blue))
