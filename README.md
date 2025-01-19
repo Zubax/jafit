@@ -44,6 +44,19 @@ jafit c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 Add `H_max=30e3` to manually limit the maximum H-field strength to 30 kA/m instead of relying on heuristics.
 Note that if the provided value is insufficient to reach saturation, the resulting hysteresis loop will be a minor loop!
 
+## Helpful tips
+
+For fetching the (approximate) data points from a third-party plot,
+such as from a published paper or a material datasheet,
+consider using [`trace_image.py`](https://gist.github.com/pavel-kirienko/0fcd509cd1d7c6dc2651981510badb99).
+
+For the benefit of all mankind, please only use SI units. To convert data from a non-SI source:
+
+- $1 \ \text{oersted} \approx 79.57747 \frac{\text{A}}{\text{m}}$
+- $1 \ \frac{\text{emu}}{\text{cm}^3} = 10^3 \frac{\text{A}}{\text{m}}$
+
+For more, refer to `papers/magnetic_units.pdf`.
+
 ## Development
 
 To run tests locally, simply say `nox`.
@@ -52,6 +65,9 @@ If you want to run PyTest only, you may want to `export NUMBA_DISABLE_JIT=1` bef
 
 To profile, go like: `python3 -m cProfile -o out.prof -m jafit ../data/bh-lng37.tab`.
 Then you can use `flameprof` to visualize the collected data.
+
+To evaluate the optimizer behaviors quickly, run the script in fast mode with `fast=1`.
+This may render the results inaccurate, but it will be much faster.
 
 ## Validation
 
@@ -91,3 +107,11 @@ jafit c_r=0.5 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001
 ```
 
 <img src="validation/hysteresis c_r=0.5 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="400px" alt="">  
+
+### Specimen D
+
+```shell
+jafit c_r=0.1 M_s=1191941.07155 a=65253 k_p=85677 alpha=0.19
+```
+
+<img src="validation/hysteresis c_r=0.1 M_s=1191941.07155 a=65253 k_p=85677 alpha=0.19.png" width="400px" alt="">  

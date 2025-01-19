@@ -32,12 +32,10 @@ def plot(
     axes_labels: tuple[str, str],
     *,
     max_points: float = 5000,
+    square_aspect_ratio: bool = False,
 ) -> None:
-    """
-    Plots B(H) data.
-    """
     plt.rcParams["font.family"] = "monospace"
-    fig, ax_b = plt.subplots(1, 1, figsize=(14, 10), sharex="all")  # type: ignore
+    fig, ax_b = plt.subplots(1, 1, figsize=(21, 15), sharex="all")  # type: ignore
     try:
 
         def trace(s: npt.NDArray[np.float64], label: str, style: Style, color: str) -> None:
@@ -71,6 +69,20 @@ def plot(
             ax_b.yaxis.set_minor_locator(mticker.AutoMinorLocator())
             ax_b.grid(which="major", color="gray", linestyle="-", alpha=0.7)
             ax_b.grid(which="minor", color="gray", linestyle=":", alpha=0.5)
+
+            if square_aspect_ratio:
+                ax_b.set_aspect(1)
+                # ensure the same x and y range
+                x_min, x_max = ax_b.get_xlim()
+                y_min, y_max = ax_b.get_ylim()
+                x_range = x_max - x_min
+                y_range = y_max - y_min
+                if x_range > y_range:
+                    mid = (y_min + y_max) / 2
+                    ax_b.set_ylim(mid - x_range / 2, mid + x_range / 2)
+                else:
+                    mid = (x_min + x_max) / 2
+                    ax_b.set_xlim(mid - y_range / 2, mid + y_range / 2)
 
             # Show the plot
             plt.tight_layout()

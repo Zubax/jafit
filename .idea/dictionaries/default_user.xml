@@ -7,12 +7,14 @@
       <w>atherton</w>
       <w>comsol</w>
       <w>demag</w>
+      <w>denom</w>
       <w>dormand</w>
       <w>downsampling</w>
       <w>fatol</w>
       <w>ftol</w>
       <w>gtol</w>
       <w>interdomain</w>
+      <w>interpolant</w>
       <w>kirienko</w>
       <w>langevin</w>
       <w>maxiter</w>

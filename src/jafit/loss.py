@@ -3,9 +3,8 @@
 from logging import getLogger
 import numpy as np
 import numpy.typing as npt
-import scipy.interpolate
 from .mag import extract_H_c_B_r_BH_max, HysteresisLoop
-from .util import njit
+from .util import njit, interpolate
 
 
 def demag_key_points(ref: HysteresisLoop, sol: HysteresisLoop, *, eps: float = 1e-9) -> float:
@@ -42,16 +41,16 @@ def magnetization(ref: HysteresisLoop, sol: HysteresisLoop, *, lattice_size: int
     for every H in the regular lattice of the specified size n on every branch.
     Both curves are interpolated using the PCHIP method (piecewise monotonic cubic non-overshooting).
     The computed loss values per loop branch are averaged.
+
     Normalization is not needed because both coordinates are in the same units [A/m];
     this is also the dimension of the computed loss value.
     """
     H_range = max(ref.H_range[0], sol.H_range[0]), min(ref.H_range[1], sol.H_range[1])
     H_lattice = np.linspace(*H_range, lattice_size)
 
-    # noinspection PyUnresolvedReferences
     def loss(hm_ref: npt.NDArray[np.float64], hm_sol: npt.NDArray[np.float64]) -> float:
-        M_ref = scipy.interpolate.PchipInterpolator(hm_ref[:, 0], hm_ref[:, 1])(H_lattice)
-        M_sol = scipy.interpolate.PchipInterpolator(hm_sol[:, 0], hm_sol[:, 1])(H_lattice)
+        M_ref = interpolate(H_lattice, hm_ref)
+        M_sol = interpolate(H_lattice, hm_sol)
         return float(np.sqrt(np.mean((M_ref - M_sol) ** 2)))
 
     loss_values = []
@@ -68,8 +67,15 @@ def nearest(ref: HysteresisLoop, sol: HysteresisLoop) -> float:
     """
     Dissimilarity metric that computes the RMS distance between each point of the reference H(M) curves and the
     nearest point on the solution H(M) curves. The computed loss values per loop branch are averaged.
+
+    For this function to work well, the points in the reference curve should be spaced more or less uniformly;
+    otherwise, the loss will be dominated by the regions with higher point density. One way to ensure this is to
+    perform spline interpolation using ``interpolate_spline_equidistant()`` before calling this function.
+    The number of sample points should usually be somewhere between 100..1000, depending on the complexity of the shape.
+
     Normalization is not needed because both coordinates are in the same units [A/m];
     this is also the dimension of the computed loss value.
+
     The computational complexity is high, not recommended for large datasets without prior downsampling.
     """
     loss: list[np.float64] = []

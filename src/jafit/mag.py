@@ -1,13 +1,12 @@
 # Copyright (C) 2025 Pavel Kirienko <pavel.kirienko@zubax.com>
 
 from __future__ import annotations
-from typing import Any
 import time
 import dataclasses
 from logging import getLogger
 import numpy as np
 import numpy.typing as npt
-from .util import njit
+from .util import njit, interpolate_spline_equidistant
 
 mu_0 = 1.2566370614359173e-6  # Vacuum permeability [henry/meter]
 
@@ -114,6 +113,16 @@ class HysteresisLoop:
             asc = asc[:: len(asc) // approx_points]
             asc.setflags(write=False)
         return HysteresisLoop(descending=dsc, ascending=asc)
+
+    def interpolate_equidistant(self, n_samples: int, spline_degree: int = 1) -> HysteresisLoop:
+        """
+        Returns a new loop where the branches are spline-interpolated at the specified number of equidistant points.
+        This is useful with certain loss functions that require largely uniform sample density.
+        """
+        return HysteresisLoop(
+            descending=interpolate_spline_equidistant(n_samples, self.descending, spline_degree=spline_degree),
+            ascending=interpolate_spline_equidistant(n_samples, self.ascending, spline_degree=spline_degree),
+        )
 
     def __post_init__(self) -> None:
         rows_dsc, cols = self.descending.shape

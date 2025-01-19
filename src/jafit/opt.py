@@ -65,7 +65,8 @@ def make_objective_function(
         else:
             error = ""
             loss_started_at = time.monotonic()
-            loss = loss_fun(ref, sol.loop.decimate(decimate_solution_to))
+            loop = HysteresisLoop(descending=sol.descending, ascending=sol.ascending)
+            loss = loss_fun(ref, loop.decimate(decimate_solution_to))
             elapsed_loss = time.monotonic() - loss_started_at
         elapsed = time.monotonic() - started_at
 
@@ -76,14 +77,14 @@ def make_objective_function(
             _logger.warning("#%05d ❌ %6.3fs: %s %s", this_epoch, elapsed, c, error)
         else:
             _logger.info(
-                "#%05d %s %6.3fs: %s loss=%.6f t_loss=%.3f pts=%.0fk",
+                "#%05d %s %6.3fs: %s loss=%.6f t_loss=%.3f pts=%d",
                 this_epoch,
                 "🔵💚"[is_best],
                 elapsed,
                 c,
                 loss,
                 elapsed_loss,
-                (len(sol.loop.descending) + len(sol.loop.ascending)) * 1e-3 if sol else 0,
+                (len(sol.descending) + len(sol.ascending)) if sol else 0,
             )
         if is_best and sol:
             callback(this_epoch, c, (sol, loss))
@@ -169,7 +170,7 @@ def fit_local(
         # The default finite differences step size used by L-BFGS-B is too small for this problem.
         # Since this is the final local optimization, we do not expect the arguments to stray far from x_0.
         diff_eps = np.maximum(np.abs(v_0) * 1e-6, 1e-9)
-        tol = 1e-15  # With the default tolerance, the optimizer tends to stop prematurely.
+        tol = 1e-12  # With the default tolerance, the optimizer tends to stop prematurely.
         _logger.info("Gradient-based local optimization: x_0=%s, diff_eps=%s", x_0, diff_eps)
         # https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html; "tol" sets "ftol" but not "gtol"
         res = opt.minimize(
@@ -177,7 +178,7 @@ def fit_local(
         )
     else:
         _logger.info("Gradient-free local optimization: x_0=%s", x_0)
-        tol = 1e-15
+        tol = 1e-12
         # https://docs.scipy.org/doc/scipy/reference/optimize.minimize-neldermead.html; "tol" sets "fatol" and "xatol"
         res = opt.minimize(
             fun, v_0, method="Nelder-Mead", bounds=bounds, callback=cb, tol=tol, options={"maxiter": maxiter}

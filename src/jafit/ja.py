@@ -10,8 +10,7 @@ import dataclasses
 import numpy as np
 import numpy.typing as npt
 import scipy.integrate
-from .util import njit
-from .mag import HysteresisLoop
+from .util import njit, relative_distance
 
 
 class SolverError(RuntimeError):
@@ -64,7 +63,7 @@ class Coef:
             raise ValueError(f"k_p invalid: {self.k_p}")
         if not non_negative(self.alpha):
             raise ValueError(f"alpha invalid: {self.alpha}")
-        if self.c_r * self.alpha >= (1 - 1e-12):
+        if self.c_r * self.alpha > (1 - 1e-9):
             raise ValueError(f"The product of c_r and alpha cannot approach 1.0: {self}")
 
     def __str__(self) -> str:
@@ -89,15 +88,12 @@ Useful for testing and validation.
 class Solution:
     """
     Each curve segment contains an nx2 matrix, where the columns are the applied field H and magnetization M.
+    All curve segments are ordered in the ascending order of the H-field.
     """
 
     virgin: npt.NDArray[np.float64]
-    """
-    The virgin curve traced from H=0, M=0 to saturation in the positive direction.
-    Each row contains the H and M values.
-    """
-
-    loop: HysteresisLoop
+    descending: npt.NDArray[np.float64]
+    ascending: npt.NDArray[np.float64]
 
 
 def solve(
@@ -105,7 +101,7 @@ def solve(
     *,
     saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
-    no_balancing: bool = False,
+    fast: bool = False,
 ) -> Solution:
     """
     Solves the JA model for the given coefficients by sweeping the magnetization in the specified direction
@@ -115,8 +111,8 @@ def solve(
     At the moment, only scalar definition is supported, but this may be extended if necessary.
 
     The sweeps will stop when either the magnetic susceptibility drops below the specified threshold (which indicates
-    that the material is saturated) or when the applied field magnitude exceeds ```H_stop_range[1]```.
-    The saturation will not be detected unless the H-field magnitude is at least ```H_stop_range[0]```;
+    that the material is saturated) or when the applied field magnitude exceeds ``H_stop_range[1]``.
+    The saturation will not be detected unless the H-field magnitude is at least ``H_stop_range[0]``;
     this is done to handle materials that exhibit very low susceptibility at weak fields.
 
     Some of the coefficients sets result in great stiffness;
@@ -131,6 +127,8 @@ def solve(
     >>> solve(stiff)  # doctest: +ELLIPSIS
     Solution(...)
     """
+    if fast:
+        _logger.debug("Fast mode is enabled; the solver may produce inaccurate results or fail to converge.")
 
     def do_sweep(H0: float, M0: float, sign: int) -> npt.NDArray[np.float64]:
         return _sweep(
@@ -140,6 +138,7 @@ def solve(
             sign=sign,
             saturation_susceptibility=saturation_susceptibility,
             H_stop_range=H_stop_range,
+            fast=fast,
         )
 
     hm_virgin = do_sweep(0, 0, +1)
@@ -150,17 +149,7 @@ def solve(
     H_last, M_last = hm_maj_dsc[-1]
     hm_maj_asc = do_sweep(H_last, M_last, +1)
 
-    loop = HysteresisLoop(descending=hm_maj_dsc[::-1], ascending=hm_maj_asc)
-    assert loop.descending[0, 0] < loop.descending[-1, 0]
-    assert loop.ascending[0, 0] < loop.ascending[-1, 0]
-    if (
-        not no_balancing
-        and loop.descending[0, 0] < 0 < loop.descending[-1, 0]
-        and loop.ascending[0, 0] < 0 < loop.ascending[-1, 0]
-    ):
-        loop = loop.balance()
-
-    return Solution(virgin=hm_virgin, loop=loop)
+    return Solution(virgin=hm_virgin, descending=hm_maj_dsc[::-1], ascending=hm_maj_asc)
 
 
 def _sweep(
@@ -171,6 +160,7 @@ def _sweep(
     sign: int,
     saturation_susceptibility: float,
     H_stop_range: tuple[float, float],
+    fast: bool,
     save_delta: npt.NDArray[np.float64] = np.array([3.0, 1.0], dtype=np.float64),
     tolerance_loosening_factor: float = 10.0,
     worst_relative_tolerance: float = 0.02,
@@ -198,8 +188,12 @@ def _sweep(
     # Ideally, we should be able to adjust the tolerance on the go without discarding the solver, but the SciPy API
     # does not seem to support this, and I don't have the time to roll out my own implicit solver.
     rtol, atol = 1e-6, 1e-3
-    solver = _make_solver(coef, H0, M0, H_bound, rtol=rtol, atol=atol)
-    hm = np.empty((10**8, 2), dtype=np.float64)
+    max_step = 1e3
+    if fast:
+        rtol, atol, max_step = [x * 100 for x in (rtol, atol, max_step)]
+
+    solver = _make_solver(coef, H0, M0, H_bound, rtol=rtol, atol=atol, max_step=max_step)
+    hm = np.empty((10**7, 2), dtype=np.float64)
     hm[0] = H0, M0
     idx = 1
     checkpoint: tuple[int, float, float] | None = None
@@ -239,7 +233,7 @@ def _sweep(
                 checkpoint = idx, float(H_old), float(M_old)  # If it fails again, rollback to this point
             else:
                 idx, H_old, M_old = checkpoint
-            solver = _make_solver(coef, H_old, M_old, H_bound, rtol=rtol, atol=atol)
+            solver = _make_solver(coef, H_old, M_old, H_bound, rtol=rtol, atol=atol, max_step=max_step)
             continue
 
         mew = solver.t, solver.y[0]
@@ -272,6 +266,7 @@ def _make_solver(
     H_bound: float,
     rtol: float,
     atol: float,
+    max_step: float,
 ) -> scipy.integrate.OdeSolver:
     """
     tolerance=rtol*M+atol; rtol dominates at strong magnetization, atol dominates at weak magnetization.
@@ -291,7 +286,7 @@ def _make_solver(
         np.array([M0], dtype=np.float64),
         first_step=first_step,
         t_bound=H_bound,
-        max_step=1e3,  # Max step must be small always; larger steps are more likely to blow up
+        max_step=max_step,  # Max step must be small always; larger steps are more likely to blow up
         rtol=rtol,  # Dominates at strong magnetization; must be <0.01 to avoid bad solutions
         atol=atol,  # Dominates at weak magnetization; must be <0.1 to avoid bad solutions
     )
@@ -339,8 +334,8 @@ def _dL_dx(x: float) -> float:
     # Danger! The small-value threshold has to be large here because the subsequent full form is very sensitive!
     if np.abs(x) < 1e-4:  # series expansion of L(x) ~ x/3 -> derivative ~ 1/3 near zero
         return 1.0 / 3.0
-    if np.abs(x) > 300:
-        # sinh(x) overflows float64 at x>~700, sinh(x)**2 overflows at x>~355;
+    if np.abs(x) > 355:
+        # sinh(x) overflows float64 at x>710, sinh(x)**2 overflows at x>355;
         # in this case, apply approximation: the first term vanishes as -1/inf=0
         return 1.0 / (x**2)
     # exact expression: -csch^2(x) + 1/x^2
