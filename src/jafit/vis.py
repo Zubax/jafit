@@ -17,7 +17,12 @@ class Color(enum.Enum):
     black = "black"
     gray = "gray"
     red = "red"
+    green = "green"
     blue = "blue"
+    magenta = "magenta"
+    orange = "orange"
+    cyan = "cyan"
+    yellow = "yellow"
 
 
 class Style(enum.Enum):

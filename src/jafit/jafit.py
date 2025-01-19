@@ -118,10 +118,10 @@ def do_fit(
     # Display the interpolation result for diagnostics and visibility.
     vis.plot(
         [
-            ("M(H) interpolated descending", ref_interpolated.descending, vis.Style.scatter, vis.Color.blue),
-            ("M(H) interpolated ascending", ref_interpolated.ascending, vis.Style.scatter, vis.Color.black),
+            ("M(H) interpolated descending", ref_interpolated.descending, vis.Style.scatter, vis.Color.black),
+            ("M(H) interpolated ascending", ref_interpolated.ascending, vis.Style.scatter, vis.Color.blue),
             ("M(H) original descending", ref_original.descending, vis.Style.scatter, vis.Color.red),
-            ("M(H) original ascending", ref_original.ascending, vis.Style.scatter, vis.Color.red),
+            ("M(H) original ascending", ref_original.ascending, vis.Style.scatter, vis.Color.magenta),
         ],
         "Reference curve interpolation",
         f"reference_interpolation{PLOT_FILE_SUFFIX}",
@@ -235,11 +235,11 @@ def plot(
     specs = [
         ("J(H) JA virgin", hm_to_hj(sol.virgin), S.line, C.gray),
         ("J(H) JA descending", hm_to_hj(sol.descending), S.line, C.black),
-        ("J(H) JA ascending", hm_to_hj(sol.ascending), S.line, C.black),
+        ("J(H) JA ascending", hm_to_hj(sol.ascending), S.line, C.blue),
     ]
     if ref:
-        specs.append(("J(H) reference descending", hm_to_hj(ref.descending), S.scatter, C.blue))
-        specs.append(("J(H) reference ascending", hm_to_hj(ref.ascending), S.scatter, C.red))
+        specs.append(("J(H) reference descending", hm_to_hj(ref.descending), S.scatter, C.red))
+        specs.append(("J(H) reference ascending", hm_to_hj(ref.ascending), S.scatter, C.magenta))
     title = str(coef)
     if subtitle:
         title += f"\n{subtitle}"
