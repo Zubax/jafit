@@ -232,11 +232,10 @@ def plot(
     subtitle: str | None = None,
 ) -> None:
     S, C = vis.Style, vis.Color
-    loop = sol.loop.decimate(OUTPUT_SAMPLE_COUNT)
     specs = [
         ("J(H) JA virgin", hm_to_hj(sol.virgin), S.line, C.gray),
-        ("J(H) JA descending", hm_to_hj(loop.descending), S.line, C.black),
-        ("J(H) JA ascending", hm_to_hj(loop.ascending), S.line, C.black),
+        ("J(H) JA descending", hm_to_hj(sol.descending), S.line, C.black),
+        ("J(H) JA ascending", hm_to_hj(sol.ascending), S.line, C.black),
     ]
     if ref:
         specs.append(("J(H) reference descending", hm_to_hj(ref.descending), S.scatter, C.blue))
@@ -314,17 +313,18 @@ def run(
     except SolverError as ex:
         plot_error(ex, coef, f"{type(ex).__name__}.{coef}{PLOT_FILE_SUFFIX}")
         raise
-    _logger.debug("Solved loop: %s", sol.loop)
+    loop = HysteresisLoop(descending=sol.descending, ascending=sol.ascending)
+    _logger.debug("Solved loop: %s", loop)
 
     # Extract the key parameters from the descending loop.
-    H_c, B_r, BH_max = extract_H_c_B_r_BH_max(sol.loop.descending)
+    H_c, B_r, BH_max = extract_H_c_B_r_BH_max(sol.descending)
     _logger.info("Predicted parameters: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", H_c, B_r, BH_max)
 
     # noinspection PyTypeChecker
     plot(sol, ref, coef, f"{coef}{PLOT_FILE_SUFFIX}", subtitle=f"H_c={H_c:.0f} B_r={B_r:.3f} BH_max={BH_max:.0f}")
 
     # Save the BH curves.
-    decimated_loop = sol.loop.decimate(OUTPUT_SAMPLE_COUNT)
+    decimated_loop = loop.decimate(OUTPUT_SAMPLE_COUNT)
     io.save(Path(f"B(H).loop{CURVE_FILE_SUFFIX}"), decimated_loop)
     io.save(Path(f"B(H).desc{CURVE_FILE_SUFFIX}"), decimated_loop.descending)
     io.save(Path(f"B(H).virgin{CURVE_FILE_SUFFIX}"), sol.virgin[:: max(1, len(sol.virgin) // OUTPUT_SAMPLE_COUNT)])

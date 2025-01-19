@@ -57,7 +57,6 @@ def test(session: nox.Session) -> None:
     session.install("coverage ~= 7.6")
 
     # Run the tool with coverage
-    session.run("coverage", "run", "-m", "jafit", "data/B(H).AlNiCo_5.tab", "effort=100", "plot_failed=1", "fast=1")
     session.run(
         "coverage",
         "run",
@@ -71,6 +70,7 @@ def test(session: nox.Session) -> None:
         "plot_failed=1",
         "fast=1",
     )
+    session.run("coverage", "run", "-m", "jafit", "data/B(H).AlNiCo_5.tab", "effort=100", "plot_failed=1", "fast=1")
 
     # Run pytest with coverage
     session.install("pytest ~= 8.3")

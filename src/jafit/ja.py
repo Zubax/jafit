@@ -11,7 +11,6 @@ import numpy as np
 import numpy.typing as npt
 import scipy.integrate
 from .util import njit, relative_distance
-from .mag import HysteresisLoop
 
 
 class SolverError(RuntimeError):
@@ -89,15 +88,12 @@ Useful for testing and validation.
 class Solution:
     """
     Each curve segment contains an nx2 matrix, where the columns are the applied field H and magnetization M.
+    All curve segments are ordered in the ascending order of the H-field.
     """
 
     virgin: npt.NDArray[np.float64]
-    """
-    The virgin curve traced from H=0, M=0 to saturation in the positive direction.
-    Each row contains the H and M values.
-    """
-
-    loop: HysteresisLoop
+    descending: npt.NDArray[np.float64]
+    ascending: npt.NDArray[np.float64]
 
 
 def solve(
@@ -105,7 +101,6 @@ def solve(
     *,
     saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
-    balancing_rtol: float = 0.01,
     fast: bool = False,
 ) -> Solution:
     """
@@ -119,8 +114,6 @@ def solve(
     that the material is saturated) or when the applied field magnitude exceeds ``H_stop_range[1]``.
     The saturation will not be detected unless the H-field magnitude is at least ``H_stop_range[0]``;
     this is done to handle materials that exhibit very low susceptibility at weak fields.
-
-    To disable balancing the loops, set ``balancing_rtol`` to zero.
 
     Some of the coefficients sets result in great stiffness;
     they are provided here for testing and illustration purposes.
@@ -156,45 +149,7 @@ def solve(
     H_last, M_last = hm_maj_dsc[-1]
     hm_maj_asc = do_sweep(H_last, M_last, +1)
 
-    loop = _construct_loop(hm_maj_dsc, hm_maj_asc, balancing_rtol=balancing_rtol)
-    return Solution(virgin=hm_virgin, loop=loop)
-
-
-def _construct_loop(
-    hm_dsc: npt.NDArray[np.float64],
-    hm_asc: npt.NDArray[np.float64],
-    /,
-    balancing_rtol: float,
-) -> HysteresisLoop:
-    loop = HysteresisLoop(descending=hm_dsc[::-1], ascending=hm_asc)
-    assert loop.descending[0, 0] < loop.descending[-1, 0]
-    assert loop.ascending[0, 0] < loop.ascending[-1, 0]
-
-    # Ensure both curves include positive and negative H and M values.
-    dsc_full = loop.descending[0, 0] < 0 < loop.descending[-1, 0] and loop.descending[0, 1] < 0 < loop.descending[-1, 1]
-    asc_full = loop.ascending[0, 0] < 0 < loop.ascending[-1, 0] and loop.ascending[0, 1] < 0 < loop.ascending[-1, 1]
-    loop_full = dsc_full and asc_full
-
-    # Ensure the endpoints of the curves are symmetric around the origin,
-    # and the ascending curves ends near the starting point of the descending curve.
-    dsc_symmetric = relative_distance(loop.descending[0], -loop.descending[-1]) < balancing_rtol
-    asc_symmetric = relative_distance(loop.ascending[0], -loop.ascending[-1]) < balancing_rtol
-    asc_dsc_close = relative_distance(loop.descending[-1], loop.ascending[-1]) < balancing_rtol
-    assert relative_distance(loop.descending[0], loop.ascending[0]) < 1e-3, "Loop branches are expected to share H_min"
-    loop_symmetric = dsc_symmetric and asc_symmetric and asc_dsc_close
-
-    # Non-monotonic M is suspicious, but not necessarily an error.
-    # Avoid balancing to avoid destruction of potentially useful data.
-    dsc_M_monotonic = np.all(np.diff(loop.descending[:, 1]) >= 0)
-    asc_M_monotonic = np.all(np.diff(loop.ascending[:, 1]) >= 0)
-    M_monotonic = dsc_M_monotonic and asc_M_monotonic
-
-    if loop_full and loop_symmetric and M_monotonic:
-        loop = loop.balance()
-    else:
-        _logger.debug("The loop does not meet the balancing preconditions:\n%s", loop)
-
-    return loop
+    return Solution(virgin=hm_virgin, descending=hm_maj_dsc[::-1], ascending=hm_maj_asc)
 
 
 def _sweep(

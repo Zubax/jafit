@@ -65,7 +65,8 @@ def make_objective_function(
         else:
             error = ""
             loss_started_at = time.monotonic()
-            loss = loss_fun(ref, sol.loop.decimate(decimate_solution_to))
+            loop = HysteresisLoop(descending=sol.descending, ascending=sol.ascending)
+            loss = loss_fun(ref, loop.decimate(decimate_solution_to))
             elapsed_loss = time.monotonic() - loss_started_at
         elapsed = time.monotonic() - started_at
 
@@ -83,7 +84,7 @@ def make_objective_function(
                 c,
                 loss,
                 elapsed_loss,
-                (len(sol.loop.descending) + len(sol.loop.ascending)) * 1e-3 if sol else 0,
+                (len(sol.descending) + len(sol.ascending)) * 1e-3 if sol else 0,
             )
         if is_best and sol:
             callback(this_epoch, c, (sol, loss))
