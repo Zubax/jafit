@@ -343,6 +343,7 @@ def main() -> None:
         run(*unnamed, **named)  # type: ignore
     except KeyboardInterrupt:
         _logger.info("Interrupted")
+        _logger.debug("Interruption stack trace", exc_info=True)
         exit(1)
     except Exception as ex:
         _logger.error("Failure: %s: %s", type(ex).__name__, ex)
