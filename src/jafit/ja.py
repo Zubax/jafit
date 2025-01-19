@@ -190,7 +190,7 @@ def _sweep(
     #
     # Ideally, we should be able to adjust the tolerance on the go without discarding the solver, but the SciPy API
     # does not seem to support this, and I don't have the time to roll out my own implicit solver.
-    rtol, atol = 1e-6, 1e-3
+    rtol, atol = 1e-6, 1e-4
     max_step = 1e3
     if fast:
         rtol, atol, max_step = [x * 100 for x in (rtol, atol, max_step)]
