@@ -63,8 +63,8 @@ class Coef:
             raise ValueError(f"k_p invalid: {self.k_p}")
         if not non_negative(self.alpha):
             raise ValueError(f"alpha invalid: {self.alpha}")
-        if self.c_r * self.alpha > (1 - 1e-9):
-            raise ValueError(f"The product of c_r and alpha cannot approach 1.0: {self}")
+        if np.isclose(self.c_r * self.alpha, 1):
+            _logger.warning("c_r*alpha≈1; no solutions exist for this combination of coefficients")
 
     def __str__(self) -> str:
         return (
@@ -202,12 +202,7 @@ def _sweep(
         try:
             msg = solver.step()
         except (ZeroDivisionError, FloatingPointError) as ex:
-            msg = f"#{idx*sign:+d} {H0=} {M0=} H={H_old} M={M_old}: {type(ex).__name__}: {ex}"
-            if idx < 10:
-                raise NumericalError(msg) from ex
-            _logger.warning("Stopping the sweep early: %s", msg)
-            _logger.debug("Stack trace for the above error", exc_info=True)
-            break
+            raise NumericalError(f"#{idx*sign:+d} {H0=} {M0=} H={H_old} M={M_old}: {type(ex).__name__}: {ex}") from ex
 
         if solver.status not in ("running", "finished"):
             _logger.debug(
