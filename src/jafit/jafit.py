@@ -194,6 +194,7 @@ def do_fit(
                 H_stop_range=H_stop_range,
                 stop_evals=max_evaluations_per_stage,
                 callback=make_callback("1_global", ref_interpolated, plot_failed=plot_failed),
+                solver_extra_args=dict(fast=fast),
             ),
             tolerance=1e-7,
         )
