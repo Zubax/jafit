@@ -266,6 +266,7 @@ def run(
     a: float | None = None,
     k_p: float | None = None,
     alpha: float | None = None,
+    H_min: float = 0,
     H_max: float = 5e6,
     effort: int = 10**7,
     skip_stages: int = 0,
@@ -308,8 +309,11 @@ def run(
 
     # Solve with the coefficients and plot the results.
     _logger.info("Solving and plotting: %s", coef)
+    if H_min < 1e-9:
+        H_min = max(coef.k_p * 2, 50e3)  # For soft materials, k_p≈H_ci; this is a good guess for H_min.
+    H_stop_range = H_min, H_max
     try:
-        sol = solve(coef, H_stop_range=(min(50e3, H_max), H_max))
+        sol = solve(coef, H_stop_range=H_stop_range)
     except SolverError as ex:
         plot_error(ex, coef, f"{type(ex).__name__}.{coef}{PLOT_FILE_SUFFIX}")
         raise
