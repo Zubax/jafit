@@ -105,7 +105,7 @@ def solve(
     *,
     saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
-    balancing_rtol: float = 0.05,
+    balancing_rtol: float = 0.01,
 ) -> Solution:
     """
     Solves the JA model for the given coefficients by sweeping the magnetization in the specified direction
