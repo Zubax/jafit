@@ -54,3 +54,23 @@ def interpolate_spline_equidistant(
     spline, _ = scipy.interpolate.make_splprep(points_xy.T, k=spline_degree)
     lattice = np.linspace(0.0, 1.0, n_samples)
     return spline(lattice).T  # type: ignore
+
+
+def relative_distance(x: npt.NDArray[np.float64], y: npt.NDArray[np.float64], eps: float = 1e-9) -> float:
+    """
+    Computes the Euclidean distance between x and y normalized by the larger norm of x and y.
+    Can be used to assess how close two points are to each other in a relative sense.
+    Zero means that the points are at the same location.
+
+    >>> relative_distance(np.array([9, 0]), np.array([10, 0]))
+    0.1
+    >>> relative_distance(np.array([0, 0]), np.array([10, 0]))
+    1.0
+    >>> relative_distance(np.array([0, 0]), np.array([0, 0]))
+    0.0
+    """
+    dist = np.linalg.norm(x - y)
+    denom = max(np.linalg.norm(x), np.linalg.norm(y))
+    if denom < eps:
+        return 0.0 if dist < eps else np.inf
+    return float(dist / denom)

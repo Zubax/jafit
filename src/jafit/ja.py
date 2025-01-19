@@ -10,7 +10,7 @@ import dataclasses
 import numpy as np
 import numpy.typing as npt
 import scipy.integrate
-from .util import njit
+from .util import njit, relative_distance
 from .mag import HysteresisLoop
 
 
@@ -64,7 +64,7 @@ class Coef:
             raise ValueError(f"k_p invalid: {self.k_p}")
         if not non_negative(self.alpha):
             raise ValueError(f"alpha invalid: {self.alpha}")
-        if self.c_r * self.alpha >= (1 - 1e-12):
+        if self.c_r * self.alpha > (1 - 1e-9):
             raise ValueError(f"The product of c_r and alpha cannot approach 1.0: {self}")
 
     def __str__(self) -> str:
@@ -105,7 +105,7 @@ def solve(
     *,
     saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
-    no_balancing: bool = False,
+    balancing_rtol: float = 0.05,
 ) -> Solution:
     """
     Solves the JA model for the given coefficients by sweeping the magnetization in the specified direction
@@ -115,9 +115,11 @@ def solve(
     At the moment, only scalar definition is supported, but this may be extended if necessary.
 
     The sweeps will stop when either the magnetic susceptibility drops below the specified threshold (which indicates
-    that the material is saturated) or when the applied field magnitude exceeds ```H_stop_range[1]```.
-    The saturation will not be detected unless the H-field magnitude is at least ```H_stop_range[0]```;
+    that the material is saturated) or when the applied field magnitude exceeds ``H_stop_range[1]``.
+    The saturation will not be detected unless the H-field magnitude is at least ``H_stop_range[0]``;
     this is done to handle materials that exhibit very low susceptibility at weak fields.
+
+    To disable balancing the loops, set ``balancing_rtol`` to zero.
 
     Some of the coefficients sets result in great stiffness;
     they are provided here for testing and illustration purposes.
@@ -153,12 +155,17 @@ def solve(
     loop = HysteresisLoop(descending=hm_maj_dsc[::-1], ascending=hm_maj_asc)
     assert loop.descending[0, 0] < loop.descending[-1, 0]
     assert loop.ascending[0, 0] < loop.ascending[-1, 0]
-    if (
-        not no_balancing
-        and loop.descending[0, 0] < 0 < loop.descending[-1, 0]
-        and loop.ascending[0, 0] < 0 < loop.ascending[-1, 0]
-    ):
+
+    do_balance = (
+        (loop.descending[0, 0] < 0 < loop.descending[-1, 0] and loop.descending[0, 1] < 0 < loop.descending[-1, 1])
+        and (loop.ascending[0, 0] < 0 < loop.ascending[-1, 0] and loop.ascending[0, 1] < 0 < loop.ascending[-1, 1])
+        and relative_distance(loop.descending[0], loop.ascending[0]) < balancing_rtol
+        and relative_distance(loop.descending[-1], loop.ascending[-1]) < balancing_rtol
+    )
+    if do_balance:
         loop = loop.balance()
+    else:
+        _logger.debug("The loop will not be balanced, returning as-is: %s", loop)
 
     return Solution(virgin=hm_virgin, loop=loop)
 
