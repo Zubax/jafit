@@ -97,7 +97,11 @@ def do_fit(
     max_evaluations_per_stage: int,
     skip_stages: int,
     plot_failed: bool,
+    fast: bool,
 ) -> Coef:
+    if fast:
+        _logger.warning("⚠ Fast mode is enabled; the solver may produce inaccurate results or fail to converge.")
+
     if len(ref.descending) == 0:
         raise ValueError("The reference descending curve is empty")
     H_c, B_r, BH_max = extract_H_c_B_r_BH_max(ref.descending)
@@ -171,6 +175,7 @@ def do_fit(
                 stop_loss=0.01,  # Fine adjustment is meaningless the loss fun is crude here.
                 stop_evals=max_evaluations_per_stage,
                 callback=make_callback("0_initial", ref_original, plot_failed=plot_failed),
+                solver_extra_args=dict(fast=fast),
             ),
             tolerance=1e-3,
         )
@@ -265,6 +270,7 @@ def run(
     effort: int = 10**7,
     skip_stages: int = 0,
     plot_failed: bool = False,
+    fast: bool = False,
     **named_args: dict[str, int | float | str],
 ) -> None:
     if unnamed_args or named_args:
@@ -278,6 +284,7 @@ def run(
     effort = int(effort)
     skip_stages = int(skip_stages)
     plot_failed = bool(plot_failed)
+    fast = bool(fast)
 
     ref = io.load(Path(ref_file_path)) if ref_file_path else None
     if ref is not None:
@@ -289,6 +296,7 @@ def run(
             max_evaluations_per_stage=effort,
             skip_stages=skip_stages,
             plot_failed=plot_failed,
+            fast=fast,
         )
         # noinspection PyTypeChecker
         print(*(f"{k}={v}" for k, v in dataclasses.asdict(coef).items()))

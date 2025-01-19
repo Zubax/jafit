@@ -106,6 +106,7 @@ def solve(
     saturation_susceptibility: float = 0.05,
     H_stop_range: tuple[float, float] = (100e3, 3e6),
     balancing_rtol: float = 0.01,
+    fast: bool = False,
 ) -> Solution:
     """
     Solves the JA model for the given coefficients by sweeping the magnetization in the specified direction
@@ -133,6 +134,8 @@ def solve(
     >>> solve(stiff)  # doctest: +ELLIPSIS
     Solution(...)
     """
+    if fast:
+        _logger.debug("Fast mode is enabled; the solver may produce inaccurate results or fail to converge.")
 
     def do_sweep(H0: float, M0: float, sign: int) -> npt.NDArray[np.float64]:
         return _sweep(
@@ -142,6 +145,7 @@ def solve(
             sign=sign,
             saturation_susceptibility=saturation_susceptibility,
             H_stop_range=H_stop_range,
+            fast=fast,
         )
 
     hm_virgin = do_sweep(0, 0, +1)
@@ -178,6 +182,7 @@ def _sweep(
     sign: int,
     saturation_susceptibility: float,
     H_stop_range: tuple[float, float],
+    fast: bool,
     save_delta: npt.NDArray[np.float64] = np.array([3.0, 1.0], dtype=np.float64),
     tolerance_loosening_factor: float = 10.0,
     worst_relative_tolerance: float = 0.02,
@@ -205,7 +210,11 @@ def _sweep(
     # Ideally, we should be able to adjust the tolerance on the go without discarding the solver, but the SciPy API
     # does not seem to support this, and I don't have the time to roll out my own implicit solver.
     rtol, atol = 1e-6, 1e-3
-    solver = _make_solver(coef, H0, M0, H_bound, rtol=rtol, atol=atol)
+    max_step = 1e3
+    if fast:
+        rtol, atol, max_step = [x * 100 for x in (rtol, atol, max_step)]
+
+    solver = _make_solver(coef, H0, M0, H_bound, rtol=rtol, atol=atol, max_step=max_step)
     hm = np.empty((10**8, 2), dtype=np.float64)
     hm[0] = H0, M0
     idx = 1
@@ -246,7 +255,7 @@ def _sweep(
                 checkpoint = idx, float(H_old), float(M_old)  # If it fails again, rollback to this point
             else:
                 idx, H_old, M_old = checkpoint
-            solver = _make_solver(coef, H_old, M_old, H_bound, rtol=rtol, atol=atol)
+            solver = _make_solver(coef, H_old, M_old, H_bound, rtol=rtol, atol=atol, max_step=max_step)
             continue
 
         mew = solver.t, solver.y[0]
@@ -279,6 +288,7 @@ def _make_solver(
     H_bound: float,
     rtol: float,
     atol: float,
+    max_step: float,
 ) -> scipy.integrate.OdeSolver:
     """
     tolerance=rtol*M+atol; rtol dominates at strong magnetization, atol dominates at weak magnetization.
@@ -298,7 +308,7 @@ def _make_solver(
         np.array([M0], dtype=np.float64),
         first_step=first_step,
         t_bound=H_bound,
-        max_step=1e3,  # Max step must be small always; larger steps are more likely to blow up
+        max_step=max_step,  # Max step must be small always; larger steps are more likely to blow up
         rtol=rtol,  # Dominates at strong magnetization; must be <0.01 to avoid bad solutions
         atol=atol,  # Dominates at weak magnetization; must be <0.1 to avoid bad solutions
     )

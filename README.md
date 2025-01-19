@@ -66,6 +66,9 @@ If you want to run PyTest only, you may want to `export NUMBA_DISABLE_JIT=1` bef
 To profile, go like: `python3 -m cProfile -o out.prof -m jafit ../data/bh-lng37.tab`.
 Then you can use `flameprof` to visualize the collected data.
 
+To evaluate the optimizer behaviors quickly, run the script in fast mode with `fast=1`.
+This may render the results inaccurate, but it will be much faster.
+
 ## Validation
 
 There is a COMSOL model in the `validation` directory that contains a bored steel cylinder with a copper wire passing
