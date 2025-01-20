@@ -14,10 +14,14 @@ import matplotlib.ticker as mticker
 
 
 class Color(enum.Enum):
+    red = "red"
+    green = "green"
+    blue = "blue"
     black = "black"
     gray = "gray"
-    red = "red"
-    blue = "blue"
+    magenta = "magenta"
+    orange = "orange"
+    cyan = "cyan"
 
 
 class Style(enum.Enum):

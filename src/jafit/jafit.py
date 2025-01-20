@@ -24,7 +24,7 @@ from . import loss, io, vis
 PLOT_FILE_SUFFIX = ".jafit.png"
 CURVE_FILE_SUFFIX = ".jafit.tab"
 
-OUTPUT_SAMPLE_COUNT = 1000
+OUTPUT_SAMPLE_COUNT = 10000
 
 
 class LimitedBacklogThreadPoolExecutor(ThreadPoolExecutor):
@@ -66,7 +66,7 @@ def make_callback(
                         plot_file = f"{file_name_prefix}_#{epoch:05}_{loss_value:.6f}_{coef}{PLOT_FILE_SUFFIX}"
                         plot(sol, ref, coef, plot_file)
 
-                    case SolverError() as ex if ex.partial_curve is not None and plot_failed:
+                    case SolverError() as ex if ex.partial_curves and plot_failed:
                         plot_file = f"{file_name_prefix}_#{epoch:05}_{type(ex).__name__}_{coef}{PLOT_FILE_SUFFIX}"
                         plot_error(ex, coef, plot_file)
 
@@ -93,7 +93,7 @@ def do_fit(
     a: float | None,
     k_p: float | None,
     alpha: float | None,
-    H_max: float,
+    H_max: float | None,
     max_evaluations_per_stage: int,
     skip_stages: int,
     plot_failed: bool,
@@ -116,17 +116,24 @@ def do_fit(
     del ref
 
     # Display the interpolation result for diagnostics and visibility.
+    interpolation_plot_specs = [
+        ("M(H) interpolated descending", ref_interpolated.descending, vis.Style.scatter, vis.Color.black),
+        ("M(H) interpolated ascending", ref_interpolated.ascending, vis.Style.scatter, vis.Color.blue),
+        ("M(H) original descending", ref_original.descending, vis.Style.scatter, vis.Color.red),
+        ("M(H) original ascending", ref_original.ascending, vis.Style.scatter, vis.Color.magenta),
+    ]
     vis.plot(
-        [
-            ("M(H) interpolated descending", ref_interpolated.descending, vis.Style.scatter, vis.Color.blue),
-            ("M(H) interpolated ascending", ref_interpolated.ascending, vis.Style.scatter, vis.Color.black),
-            ("M(H) original descending", ref_original.descending, vis.Style.scatter, vis.Color.red),
-            ("M(H) original ascending", ref_original.ascending, vis.Style.scatter, vis.Color.red),
-        ],
+        interpolation_plot_specs,
+        "Reference curve interpolation with 1:1 aspect ratio",
+        f"reference_interpolation_square{PLOT_FILE_SUFFIX}",
+        axes_labels=("H [A/m]", "B [T]"),
+        square_aspect_ratio=True,  # Same aspect ratio is required to check that the points are equidistant.
+    )
+    vis.plot(
+        interpolation_plot_specs,
         "Reference curve interpolation",
         f"reference_interpolation{PLOT_FILE_SUFFIX}",
         axes_labels=("H [A/m]", "B [T]"),
-        square_aspect_ratio=True,  # Same aspect ratio is required to check that the points are equidistant.
     )
 
     # Ensure the interpolation did not cause nontrivial distortion.
@@ -140,28 +147,38 @@ def do_fit(
 
     # Initialize the coefficients and their bounds.
     coef = Coef(
-        c_r=_perhaps(c_r, 1e-6),
+        c_r=_perhaps(c_r, 0.1),
         M_s=_perhaps(M_s, M_s_min * 1.001),  # Optimizers tend to be unstable if parameters are too close to the bounds
         a=_perhaps(a, 1e3),
-        k_p=_perhaps(k_p, 1e3),
+        k_p=_perhaps(k_p, max(H_c, 1.0)),  # For soft materials, k_p≈H_ci. For others this is still a good guess.
         alpha=_perhaps(alpha, 0.001),
     )
-    x_min = Coef(c_r=1e-9, M_s=M_s_min, a=1e-6, k_p=1e-6, alpha=1e-9)
+    x_min = Coef(c_r=1e-9, M_s=M_s_min, a=1e-6, k_p=1e-6, alpha=1e-12)
     # TODO: better way of setting the upper bounds?
-    x_max = Coef(c_r=0.999999, M_s=3e6, a=3e6, k_p=3e6, alpha=0.999999)
+    x_max = Coef(c_r=0.999999, M_s=3e6, a=3e6, k_p=3e6, alpha=0.05)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
 
-    # Ensure the swept H-range is large enough.
-    # This is to ensure that the saturation detection heuristic does not mistakenly terminate the sweep too early.
-    H_stop_range = float(
-        max(
-            np.max(np.abs(ref_original.H_range)),
-            H_c * 2,
-            M_s_min * 0.1,
-        )
-    ), float(H_max)
-    _logger.info("H amplitude range: %s [A/m]", H_stop_range)
+    # Ensure that the saturation detection heuristic does not mistakenly terminate the sweep too early.
+    # If we have a full hysteresis loop, simply limit the H-range to that; this speeds up optimization considerably
+    # because we can quickly weed out materials that don't behave as expected in the specified loop. The provided
+    # loop in this case doesn't need to be the major one, too!
+    H_stop: tuple[float, float] | float
+    if ref_original.is_full:
+        # If we have the full loop, simply replicate its H-range. The loop may be a minor one.
+        H_stop = max(float(np.abs(ref_original.H_range).max()), H_max or 0)
+    else:
+        # If we only have a part of the loop, assume that part belongs to the major loop.
+        # We have to employ heuristics to determine when to stop the sweep.
+        H_stop = float(
+            max(
+                np.abs(ref_original.H_range).max(),
+                H_c * 2,
+                M_s_min * 0.1,
+            )
+        ), float(H_max or max(100e3, M_s_min * 2, H_c * 4))
+    _logger.info("H amplitude range: %s [A/m]", H_stop)
 
+    # Run the optimizer.
     if (H_c > 100 and B_r > 0.1) and skip_stages < 1:
         _logger.info("Demag knee detected; performing initial H_c|B_r|BH_max optimization")
         coef = fit_global(
@@ -171,7 +188,7 @@ def do_fit(
             obj_fn=make_objective_function(
                 ref_original,  # Here we're using the non-interpolated curve.
                 loss.demag_key_points,
-                H_stop_range=H_stop_range,
+                H_stop=H_stop,
                 stop_loss=0.01,  # Fine adjustment is meaningless the loss fun is crude here.
                 stop_evals=max_evaluations_per_stage,
                 callback=make_callback("0_initial", ref_original, plot_failed=plot_failed),
@@ -191,7 +208,7 @@ def do_fit(
             obj_fn=make_objective_function(
                 ref_interpolated,
                 loss.nearest,
-                H_stop_range=H_stop_range,
+                H_stop=H_stop,
                 stop_evals=max_evaluations_per_stage,
                 callback=make_callback("1_global", ref_interpolated, plot_failed=plot_failed),
                 solver_extra_args=dict(fast=fast),
@@ -207,7 +224,7 @@ def do_fit(
         obj_fn=make_objective_function(
             ref_interpolated,
             loss.nearest,
-            H_stop_range=H_stop_range,
+            H_stop=H_stop,
             stop_evals=max_evaluations_per_stage,
             callback=make_callback("2_local", ref_interpolated, plot_failed=plot_failed),
         ),
@@ -235,11 +252,11 @@ def plot(
     specs = [
         ("J(H) JA virgin", hm_to_hj(sol.virgin), S.line, C.gray),
         ("J(H) JA descending", hm_to_hj(sol.descending), S.line, C.black),
-        ("J(H) JA ascending", hm_to_hj(sol.ascending), S.line, C.black),
+        ("J(H) JA ascending", hm_to_hj(sol.ascending), S.line, C.blue),
     ]
     if ref:
-        specs.append(("J(H) reference descending", hm_to_hj(ref.descending), S.scatter, C.blue))
-        specs.append(("J(H) reference ascending", hm_to_hj(ref.ascending), S.scatter, C.red))
+        specs.append(("J(H) reference descending", hm_to_hj(ref.descending), S.scatter, C.red))
+        specs.append(("J(H) reference ascending", hm_to_hj(ref.ascending), S.scatter, C.magenta))
     title = str(coef)
     if subtitle:
         title += f"\n{subtitle}"
@@ -247,15 +264,21 @@ def plot(
 
 
 def plot_error(ex: SolverError, coef: Coef, plot_file: Path | str) -> None:
-    if ex.partial_curve is None:
+    if not ex.partial_curves:
         _logger.debug("No partial curve to plot: %s", ex)
         return
+    colors = [e for e in vis.Color]
     specs = [
-        ("M(H)", ex.partial_curve, vis.Style.line, vis.Color.black),
+        (
+            f"M(H) #{idx}",
+            curve,
+            vis.Style.line,
+            colors[idx % len(colors)],
+        )
+        for idx, curve in enumerate(ex.partial_curves)
     ]
     title = f"{coef}\n{type(ex).__name__}\n{ex}"
     vis.plot(specs, title, plot_file, axes_labels=("H [A/m]", "M [A/m]"))
-    _logger.debug("%s max(|dH|)=%s", type(ex).__name__, np.abs(np.diff(ex.partial_curve[:, 0])).max())
 
 
 def run(
@@ -266,7 +289,8 @@ def run(
     a: float | None = None,
     k_p: float | None = None,
     alpha: float | None = None,
-    H_max: float = 5e6,
+    H_min: float = 0,
+    H_max: float | None = None,
     effort: int = 10**7,
     skip_stages: int = 0,
     plot_failed: bool = False,
@@ -279,7 +303,7 @@ def run(
     ja_dict = {
         k: (float(v) if v is not None else None) for k, v in dict(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha).items()
     }
-    H_max = float(H_max)
+    H_max = float(H_max) if H_max is not None else None
     effort = int(effort)
     effort = int(effort)
     skip_stages = int(skip_stages)
@@ -308,8 +332,10 @@ def run(
 
     # Solve with the coefficients and plot the results.
     _logger.info("Solving and plotting: %s", coef)
+    if H_min < 1e-9:
+        H_min = max(coef.k_p * 2, 100e3)  # For soft materials, k_p≈H_ci; this is a good guess for H_min.
     try:
-        sol = solve(coef, H_stop_range=(min(50e3, H_max), H_max))
+        sol = solve(coef, H_stop=(H_min, H_max or 5e6))
     except SolverError as ex:
         plot_error(ex, coef, f"{type(ex).__name__}.{coef}{PLOT_FILE_SUFFIX}")
         raise
@@ -339,6 +365,7 @@ def main() -> None:
         run(*unnamed, **named)  # type: ignore
     except KeyboardInterrupt:
         _logger.info("Interrupted")
+        _logger.debug("Interruption stack trace", exc_info=True)
         exit(1)
     except Exception as ex:
         _logger.error("Failure: %s: %s", type(ex).__name__, ex)

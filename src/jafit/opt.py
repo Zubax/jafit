@@ -35,7 +35,7 @@ def make_objective_function(
     ref: HysteresisLoop,
     loss_fun: LossFunction,
     *,
-    H_stop_range: tuple[float, float],
+    H_stop: tuple[float, float] | float,
     callback: Callable[[int, Coef, tuple[Solution, float] | Exception], None],
     decimate_solution_to: int = 10_000,
     stop_loss: float = -np.inf,
@@ -57,7 +57,7 @@ def make_objective_function(
         started_at = time.monotonic()
         elapsed_loss = 0.0
         try:
-            sol = solve(c, H_stop_range=H_stop_range, **(solver_extra_args or {}))
+            sol = solve(c, H_stop=H_stop, **(solver_extra_args or {}))
         except SolverError as ex:
             callback(this_epoch, c, ex)
             error = f"{type(ex).__name__}: {ex}"
@@ -77,14 +77,15 @@ def make_objective_function(
             _logger.warning("#%05d ❌ %6.3fs: %s %s", this_epoch, elapsed, c, error)
         else:
             _logger.info(
-                "#%05d %s %6.3fs: %s loss=%.6f t_loss=%.3f pts=%d",
+                "#%05d %s %6.3fs: %s loss=%.6f t_loss=%.3f pts↓%d↑%d",
                 this_epoch,
                 "🔵💚"[is_best],
                 elapsed,
                 c,
                 loss,
                 elapsed_loss,
-                (len(sol.descending) + len(sol.ascending)) if sol else 0,
+                len(sol.descending) if sol else 0,
+                len(sol.ascending) if sol else 0,
             )
         if is_best and sol:
             callback(this_epoch, c, (sol, loss))

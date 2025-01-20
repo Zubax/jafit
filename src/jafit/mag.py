@@ -38,7 +38,13 @@ class HysteresisLoop:
 
     @property
     def is_full(self) -> bool:
-        return len(self.descending) > 0 and len(self.ascending) > 0
+        """True if the loop has both branches and they both span from negative to positive H."""
+        return (
+            len(self.descending) > 0
+            and len(self.ascending) > 0
+            and (self.descending[0, 0] < 0 < self.descending[-1, 0])
+            and (self.ascending[0, 0] < 0 < self.ascending[-1, 0])
+        )
 
     def balance(self) -> HysteresisLoop:
         """
@@ -47,7 +53,7 @@ class HysteresisLoop:
         """
         started_at = time.monotonic()
         if not self.is_full:
-            raise ValueError(f"Cannot balance the hysteresis loop because one of the branches is missing: {self}")
+            raise ValueError(f"Cannot balance the hysteresis loop: {self}")
         if max(len(self.descending), len(self.ascending)) / min(len(self.descending), len(self.ascending)) >= 10:
             _logger.debug("HysteresisLoop: Balancing: The curves have significantly different lengths:\n%s", self)
 
