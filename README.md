@@ -12,8 +12,8 @@ The tool accepts a tab-separated (TSV) or comma-separated (CSV) file encoding th
 as a command line argument (the type of file is auto-detected).
 The first column contains the magnetic field strength H \[ampere/meter],
 and the second column contains the magnetic flux density B \[tesla].
-The file may contain either the entire major hysteresis loop, or any part of it;
-e.g., only a part of the descending branch.
+The file may contain either the entire hysteresis loop, or any part of it; e.g., only a part of the descending branch.
+If a full loop is provided, then that loop doesn't need to be the major loop.
 The first row may or may not be the header row.
 
 Install the package before using it:

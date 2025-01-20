@@ -66,7 +66,7 @@ def make_callback(
                         plot_file = f"{file_name_prefix}_#{epoch:05}_{loss_value:.6f}_{coef}{PLOT_FILE_SUFFIX}"
                         plot(sol, ref, coef, plot_file)
 
-                    case SolverError() as ex if ex.partial_curve is not None and plot_failed:
+                    case SolverError() as ex if ex.partial_curves and plot_failed:
                         plot_file = f"{file_name_prefix}_#{epoch:05}_{type(ex).__name__}_{coef}{PLOT_FILE_SUFFIX}"
                         plot_error(ex, coef, plot_file)
 
@@ -93,7 +93,7 @@ def do_fit(
     a: float | None,
     k_p: float | None,
     alpha: float | None,
-    H_max: float,
+    H_max: float | None,
     max_evaluations_per_stage: int,
     skip_stages: int,
     plot_failed: bool,
@@ -158,17 +158,27 @@ def do_fit(
     x_max = Coef(c_r=0.999999, M_s=3e6, a=3e6, k_p=3e6, alpha=0.999)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
 
-    # Ensure the swept H-range is large enough.
-    # This is to ensure that the saturation detection heuristic does not mistakenly terminate the sweep too early.
-    H_stop_range = float(
-        max(
-            np.max(np.abs(ref_original.H_range)),
-            H_c * 2,
-            M_s_min * 0.1,
-        )
-    ), float(H_max)
-    _logger.info("H amplitude range: %s [A/m]", H_stop_range)
+    # Ensure that the saturation detection heuristic does not mistakenly terminate the sweep too early.
+    # If we have a full hysteresis loop, simply limit the H-range to that; this speeds up optimization considerably
+    # because we can quickly weed out materials that don't behave as expected in the specified loop. The provided
+    # loop in this case doesn't need to be the major one, too!
+    H_stop: tuple[float, float] | float
+    if ref_original.is_full:
+        # If we have the full loop, simply replicate its H-range. The loop may be a minor one.
+        H_stop = max(float(np.abs(ref_original.H_range).max()), H_max or 0)
+    else:
+        # If we only have a part of the loop, assume that part belongs to the major loop.
+        # We have to employ heuristics to determine when to stop the sweep.
+        H_stop = float(
+            max(
+                np.abs(ref_original.H_range).max(),
+                H_c * 2,
+                M_s_min * 0.1,
+            )
+        ), float(H_max or 5e6)
+    _logger.info("H amplitude range: %s [A/m]", H_stop)
 
+    # Run the optimizer.
     if (H_c > 100 and B_r > 0.1) and skip_stages < 1:
         _logger.info("Demag knee detected; performing initial H_c|B_r|BH_max optimization")
         coef = fit_global(
@@ -178,7 +188,7 @@ def do_fit(
             obj_fn=make_objective_function(
                 ref_original,  # Here we're using the non-interpolated curve.
                 loss.demag_key_points,
-                H_stop_range=H_stop_range,
+                H_stop=H_stop,
                 stop_loss=0.01,  # Fine adjustment is meaningless the loss fun is crude here.
                 stop_evals=max_evaluations_per_stage,
                 callback=make_callback("0_initial", ref_original, plot_failed=plot_failed),
@@ -198,7 +208,7 @@ def do_fit(
             obj_fn=make_objective_function(
                 ref_interpolated,
                 loss.nearest,
-                H_stop_range=H_stop_range,
+                H_stop=H_stop,
                 stop_evals=max_evaluations_per_stage,
                 callback=make_callback("1_global", ref_interpolated, plot_failed=plot_failed),
                 solver_extra_args=dict(fast=fast),
@@ -214,7 +224,7 @@ def do_fit(
         obj_fn=make_objective_function(
             ref_interpolated,
             loss.nearest,
-            H_stop_range=H_stop_range,
+            H_stop=H_stop,
             stop_evals=max_evaluations_per_stage,
             callback=make_callback("2_local", ref_interpolated, plot_failed=plot_failed),
         ),
@@ -280,7 +290,7 @@ def run(
     k_p: float | None = None,
     alpha: float | None = None,
     H_min: float = 0,
-    H_max: float = 5e6,
+    H_max: float | None = None,
     effort: int = 10**7,
     skip_stages: int = 0,
     plot_failed: bool = False,
@@ -293,7 +303,7 @@ def run(
     ja_dict = {
         k: (float(v) if v is not None else None) for k, v in dict(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha).items()
     }
-    H_max = float(H_max)
+    H_max = float(H_max) if H_max is not None else None
     effort = int(effort)
     effort = int(effort)
     skip_stages = int(skip_stages)
@@ -324,9 +334,8 @@ def run(
     _logger.info("Solving and plotting: %s", coef)
     if H_min < 1e-9:
         H_min = max(coef.k_p * 2, 100e3)  # For soft materials, k_p≈H_ci; this is a good guess for H_min.
-    H_stop_range = H_min, H_max
     try:
-        sol = solve(coef, H_stop_range=H_stop_range)
+        sol = solve(coef, H_stop=(H_min, H_max or 5e9))
     except SolverError as ex:
         plot_error(ex, coef, f"{type(ex).__name__}.{coef}{PLOT_FILE_SUFFIX}")
         raise

@@ -110,37 +110,46 @@ class Solution:
 
 def solve(
     coef: Coef,
+    H_stop: tuple[float, float] | float,
     *,
     saturation_susceptibility: float = 0.05,
-    H_stop_range: tuple[float, float] = (100e3, 3e6),
     fast: bool = False,
 ) -> Solution:
     """
     Solves the JA model for the given coefficients by sweeping the magnetization in the specified direction
     until saturation, then retraces the magnetization back until saturation in the opposite direction,
-    and then forward again to reconstruct the full major loop.
+    and then forward again to reconstruct the full loop.
 
     At the moment, only scalar definition is supported, but this may be extended if necessary.
 
     The sweeps will stop when either the magnetic susceptibility drops below the specified threshold (which indicates
-    that the material is saturated) or when the applied field magnitude exceeds ``H_stop_range[1]``.
-    The saturation will not be detected unless the H-field magnitude is at least ``H_stop_range[0]``;
+    that the material is saturated) or when the applied field magnitude exceeds ``H_stop[1]``.
+    The saturation will not be detected unless the H-field magnitude is at least ``H_stop[0]``;
     this is done to handle materials that exhibit very low susceptibility at weak fields.
+    If ``H_stop`` is a scalar, the sweep will have a fixed H amplitude of that value.
+    If the ``H_stop`` amplitude is not enough to saturate the material, the resulting loop will be a minor one.
 
     Some of the coefficients sets result in great stiffness;
     they are provided here for testing and illustration purposes.
     The solver is expected to manage that by dynamically adjusting the tolerance bounds.
 
     >>> stiff = Coef(c_r=0.956886485630692230, M_s=2956870.912007416, a=025069.875361107, k_p=019498.206218542, alpha=0.181220196232252662)
-    >>> solve(stiff)  # doctest: +ELLIPSIS
+    >>> solve(stiff, (100e3, 3e6))  # doctest: +ELLIPSIS
     Solution(...)
 
     >>> stiff = Coef(c_r=0.1, M_s=1191941.07155, a=65253, k_p=85677, alpha=0.19)
-    >>> solve(stiff)  # doctest: +ELLIPSIS
+    >>> solve(stiff, (100e3, 3e6))  # doctest: +ELLIPSIS
     Solution(...)
     """
     if fast:
         _logger.debug("Fast mode is enabled; the solver may produce inaccurate results or fail to converge.")
+
+    if isinstance(H_stop, float):
+        H_stop_range = H_stop, H_stop
+    else:
+        H_stop_range = float(H_stop[0]), float(H_stop[1])
+    if not len(H_stop_range) == 2 or not np.isfinite(H_stop_range).all() or not np.all(np.array(H_stop_range) > 0):
+        raise ValueError(f"Invalid H stop range: {H_stop_range}")
 
     def do_sweep(H0: float, M0: float, sign: int) -> npt.NDArray[np.float64]:
         try:
@@ -161,19 +170,19 @@ def solve(
 
     H_last, M_last = hm_virgin[-1]
     try:
-        hm_maj_dsc = do_sweep(H_last, M_last, -1)
+        hm_dsc = do_sweep(H_last, M_last, -1)
     except SolverError as ex:
         ex.partial_curves = [hm_virgin] + ex.partial_curves
         raise ex
 
-    H_last, M_last = hm_maj_dsc[-1]
+    H_last, M_last = hm_dsc[-1]
     try:
-        hm_maj_asc = do_sweep(H_last, M_last, +1)
+        hm_asc = do_sweep(H_last, M_last, +1)
     except SolverError as ex:
-        ex.partial_curves = [hm_virgin, hm_maj_dsc] + ex.partial_curves
+        ex.partial_curves = [hm_virgin, hm_dsc] + ex.partial_curves
         raise ex
 
-    return Solution(virgin=hm_virgin, descending=hm_maj_dsc[::-1], ascending=hm_maj_asc)
+    return Solution(virgin=hm_virgin, descending=hm_dsc[::-1], ascending=hm_asc)
 
 
 def _sweep(
