@@ -224,6 +224,7 @@ def _sweep(
     max_step = min(100.0, H_stop_range[0] / 200, H_stop_range[1] / 1000)
     if fast:
         rtol, atol, max_step = [x * 100 for x in (rtol, atol, max_step)]
+    _logger.debug("Solving with max_step=%.1f", max_step)
 
     solver = _make_solver(coef, H0, M0, H_bound, rtol=rtol, atol=atol, max_step=max_step)
     hm = np.empty((10**7, 2), dtype=np.float64)
