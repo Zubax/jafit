@@ -223,7 +223,7 @@ def _sweep(
     rtol, atol = 1e-6, 1e-4
     max_step = min(200.0, H_stop_range[0] / 200, H_stop_range[1] / 1000)
     if fast:
-        rtol, atol, max_step = [x * 100 for x in (rtol, atol, max_step)]
+        rtol, atol, max_step = [x * 10 for x in (rtol, atol, max_step)]
     _logger.debug(
         "Starting sweep: H=[%+.f→%+.f] M0=%+.f tol=(%.1e×M+%.1e) max_step=%.1f",
         H0,
