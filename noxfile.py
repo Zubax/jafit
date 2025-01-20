@@ -19,6 +19,7 @@ BYPRODUCTS = [
     "*.log",
     "*.tmp",
     "*.jafit.png",
+    "*.jafit.tab",
 ]
 
 nox.options.error_on_external_run = True
