@@ -70,7 +70,7 @@ def relative_distance(x: npt.NDArray[np.float64], y: npt.NDArray[np.float64], ep
     0.0
     """
     dist = np.linalg.norm(x - y)
-    denom = max(np.linalg.norm(x), np.linalg.norm(y))
+    denom = max(np.linalg.norm(x), np.linalg.norm(y))  # type: ignore
     if denom < eps:
         return 0.0 if dist < eps else np.inf
     return float(dist / denom)
