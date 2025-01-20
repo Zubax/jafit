@@ -14,9 +14,14 @@ from .util import njit, relative_distance
 
 
 class SolverError(RuntimeError):
-    def __init__(self, message: str, partial_curve: npt.NDArray[np.float64] | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        partial_curves: list[npt.NDArray[np.float64]] | None = None,
+    ) -> None:
         super().__init__(message)
-        self.partial_curve = partial_curve
+        self.partial_curves = partial_curves or []
 
 
 class ConvergenceError(SolverError):
@@ -155,10 +160,18 @@ def solve(
     hm_virgin = do_sweep(0, 0, +1)
 
     H_last, M_last = hm_virgin[-1]
-    hm_maj_dsc = do_sweep(H_last, M_last, -1)
+    try:
+        hm_maj_dsc = do_sweep(H_last, M_last, -1)
+    except SolverError as ex:
+        ex.partial_curves = [hm_virgin] + ex.partial_curves
+        raise ex
 
     H_last, M_last = hm_maj_dsc[-1]
-    hm_maj_asc = do_sweep(H_last, M_last, +1)
+    try:
+        hm_maj_asc = do_sweep(H_last, M_last, +1)
+    except SolverError as ex:
+        ex.partial_curves = [hm_virgin, hm_maj_dsc] + ex.partial_curves
+        raise ex
 
     return Solution(virgin=hm_virgin, descending=hm_maj_dsc[::-1], ascending=hm_maj_asc)
 
@@ -233,7 +246,7 @@ def _sweep(
             if rtol > worst_relative_tolerance:  # Give up, it's hopeless
                 raise ConvergenceError(
                     f"#{idx * sign:+06d} {H0=:+012.3f} {M0=:+012.3f} H={H_old:+012.3f} M={M_old:+012.3f}: {msg}",
-                    partial_curve=hm[:idx],
+                    partial_curves=[hm[:idx]],
                 )
             if checkpoint is None:
                 checkpoint = idx, float(H_old), float(M_old)  # If it fails again, rollback to this point

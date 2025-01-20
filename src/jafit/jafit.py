@@ -254,15 +254,21 @@ def plot(
 
 
 def plot_error(ex: SolverError, coef: Coef, plot_file: Path | str) -> None:
-    if ex.partial_curve is None:
+    if not ex.partial_curves:
         _logger.debug("No partial curve to plot: %s", ex)
         return
+    colors = [e for e in vis.Color]
     specs = [
-        ("M(H)", ex.partial_curve, vis.Style.line, vis.Color.black),
+        (
+            f"M(H) #{idx}",
+            curve,
+            vis.Style.line,
+            colors[idx % len(colors)],
+        )
+        for idx, curve in enumerate(ex.partial_curves)
     ]
     title = f"{coef}\n{type(ex).__name__}\n{ex}"
     vis.plot(specs, title, plot_file, axes_labels=("H [A/m]", "M [A/m]"))
-    _logger.debug("%s max(|dH|)=%s", type(ex).__name__, np.abs(np.diff(ex.partial_curve[:, 0])).max())
 
 
 def run(
