@@ -153,9 +153,9 @@ def do_fit(
         k_p=_perhaps(k_p, max(H_c, 1.0)),  # For soft materials, k_p≈H_ci. For others this is still a good guess.
         alpha=_perhaps(alpha, 0.001),
     )
-    x_min = Coef(c_r=1e-9, M_s=M_s_min, a=1e-6, k_p=1e-6, alpha=1e-9)
+    x_min = Coef(c_r=1e-9, M_s=M_s_min, a=1e-6, k_p=1e-6, alpha=1e-12)
     # TODO: better way of setting the upper bounds?
-    x_max = Coef(c_r=0.999999, M_s=3e6, a=3e6, k_p=3e6, alpha=0.999)
+    x_max = Coef(c_r=0.999999, M_s=3e6, a=3e6, k_p=3e6, alpha=0.05)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
 
     # Ensure that the saturation detection heuristic does not mistakenly terminate the sweep too early.
