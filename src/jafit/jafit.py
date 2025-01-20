@@ -335,7 +335,7 @@ def run(
     if H_min < 1e-9:
         H_min = max(coef.k_p * 2, 100e3)  # For soft materials, k_p≈H_ci; this is a good guess for H_min.
     try:
-        sol = solve(coef, H_stop=(H_min, H_max or 5e9))
+        sol = solve(coef, H_stop=(H_min, H_max or 5e6))
     except SolverError as ex:
         plot_error(ex, coef, f"{type(ex).__name__}.{coef}{PLOT_FILE_SUFFIX}")
         raise
