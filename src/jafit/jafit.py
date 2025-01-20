@@ -116,17 +116,24 @@ def do_fit(
     del ref
 
     # Display the interpolation result for diagnostics and visibility.
+    interpolation_plot_specs = [
+        ("M(H) interpolated descending", ref_interpolated.descending, vis.Style.scatter, vis.Color.black),
+        ("M(H) interpolated ascending", ref_interpolated.ascending, vis.Style.scatter, vis.Color.blue),
+        ("M(H) original descending", ref_original.descending, vis.Style.scatter, vis.Color.red),
+        ("M(H) original ascending", ref_original.ascending, vis.Style.scatter, vis.Color.magenta),
+    ]
     vis.plot(
-        [
-            ("M(H) interpolated descending", ref_interpolated.descending, vis.Style.scatter, vis.Color.black),
-            ("M(H) interpolated ascending", ref_interpolated.ascending, vis.Style.scatter, vis.Color.blue),
-            ("M(H) original descending", ref_original.descending, vis.Style.scatter, vis.Color.red),
-            ("M(H) original ascending", ref_original.ascending, vis.Style.scatter, vis.Color.magenta),
-        ],
+        interpolation_plot_specs,
+        "Reference curve interpolation with 1:1 aspect ratio",
+        f"reference_interpolation_square{PLOT_FILE_SUFFIX}",
+        axes_labels=("H [A/m]", "B [T]"),
+        square_aspect_ratio=True,  # Same aspect ratio is required to check that the points are equidistant.
+    )
+    vis.plot(
+        interpolation_plot_specs,
         "Reference curve interpolation",
         f"reference_interpolation{PLOT_FILE_SUFFIX}",
         axes_labels=("H [A/m]", "B [T]"),
-        square_aspect_ratio=True,  # Same aspect ratio is required to check that the points are equidistant.
     )
 
     # Ensure the interpolation did not cause nontrivial distortion.
