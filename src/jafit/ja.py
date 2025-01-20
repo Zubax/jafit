@@ -67,7 +67,11 @@ class Coef:
         if not non_negative(self.alpha):
             raise ValueError(f"alpha invalid: {self.alpha}")
         if np.isclose(self.c_r * self.alpha, 1):
-            _logger.warning("c_r*alpha≈1; no solutions exist for this combination of coefficients")
+            _logger.warning(
+                "c_r*alpha≈1; no solutions exist for this combination of coefficients: c_r=%f alpha=%f",
+                self.c_r,
+                self.alpha,
+            )
 
     def __str__(self) -> str:
         return (

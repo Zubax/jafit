@@ -8,7 +8,8 @@ Jiles-Atherton system identification tool: Given a BH curve, finds the Jiles-Ath
 
 ## Usage
 
-The tool accepts a tab-separated (TSV) file encoding the reference BH curve as a command line argument.
+The tool accepts a tab-separated (TSV) or comma-separated (CSV) file encoding the reference BH curve
+as a command line argument (the type of file is auto-detected).
 The first column contains the magnetic field strength H \[ampere/meter],
 and the second column contains the magnetic flux density B \[tesla].
 The file may contain either the entire major hysteresis loop, or any part of it;

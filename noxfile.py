@@ -57,20 +57,10 @@ def test(session: nox.Session) -> None:
     session.install("coverage ~= 7.6")
 
     # Run the tool with coverage
-    session.run(
-        "coverage",
-        "run",
-        "-m",
-        "jafit",
-        "c_r=0.1",
-        "M_s=1.6e6",
-        "a=560",
-        "k_p=1200",
-        "alpha=0.0007",
-        "plot_failed=1",
-        "fast=1",
-    )
-    session.run("coverage", "run", "-m", "jafit", "data/B(H).AlNiCo_5.tab", "effort=100", "plot_failed=1", "fast=1")
+    common = ["effort=100", "plot_failed=1", "fast=1"]
+    session.run("coverage", "run", "-m", "jafit", "c_r=0.1", "M_s=1.6e6", "a=560", "k_p=1200", "alpha=0.0007", *common)
+    session.run("coverage", "run", "-m", "jafit", "data/B(H).AlNiCo_5.tab", *common)
+    session.run("coverage", "run", "-m", "jafit", "data/Altair_Flux_HystereticExample.csv", *common)
 
     # Run pytest with coverage
     session.install("pytest ~= 8.3")
