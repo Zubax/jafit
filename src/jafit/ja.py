@@ -221,11 +221,18 @@ def _sweep(
     # Ideally, we should be able to adjust the tolerance on the go without discarding the solver, but the SciPy API
     # does not seem to support this, and I don't have the time to roll out my own implicit solver.
     rtol, atol = 1e-6, 1e-4
-    max_step = min(100.0, H_stop_range[0] / 200, H_stop_range[1] / 1000)
+    max_step = min(200.0, H_stop_range[0] / 200, H_stop_range[1] / 1000)
     if fast:
         rtol, atol, max_step = [x * 100 for x in (rtol, atol, max_step)]
-    _logger.debug("Solving with max_step=%.1f", max_step)
-
+    _logger.debug(
+        "Starting sweep: H=[%+.f→%+.f] M0=%+.f tol=(%.1e×M+%.1e) max_step=%.1f",
+        H0,
+        H_bound,
+        M0,
+        rtol,
+        atol,
+        max_step,
+    )
     solver = _make_solver(coef, H0, M0, H_bound, rtol=rtol, atol=atol, max_step=max_step)
     hm = np.empty((10**7, 2), dtype=np.float64)
     hm[0] = H0, M0
