@@ -233,7 +233,9 @@ def _sweep(
     while solver.status == "running":
         H_old, M_old = solver.t, solver.y[0]
         try:
-            msg = solver.step()
+            # Radau has a bug in predict_factor() that causes a division by zero; it is benign though and can be ignored
+            with np.errstate(divide="ignore"):
+                msg = solver.step()
         except (ZeroDivisionError, FloatingPointError) as ex:
             _logger.debug("Stack trace for %s", type(ex).__name__, exc_info=True)
             raise NumericalError(f"#{idx*sign:+d} {H0=} {M0=} H={H_old} M={M_old}: {type(ex).__name__}: {ex}") from ex
