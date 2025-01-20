@@ -24,7 +24,7 @@ from . import loss, io, vis
 PLOT_FILE_SUFFIX = ".jafit.png"
 CURVE_FILE_SUFFIX = ".jafit.tab"
 
-OUTPUT_SAMPLE_COUNT = 1000
+OUTPUT_SAMPLE_COUNT = 10000
 
 
 class LimitedBacklogThreadPoolExecutor(ThreadPoolExecutor):

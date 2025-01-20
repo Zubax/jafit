@@ -134,15 +134,19 @@ def solve(
         _logger.debug("Fast mode is enabled; the solver may produce inaccurate results or fail to converge.")
 
     def do_sweep(H0: float, M0: float, sign: int) -> npt.NDArray[np.float64]:
-        return _sweep(
-            coef,
-            H0=H0,
-            M0=M0,
-            sign=sign,
-            saturation_susceptibility=saturation_susceptibility,
-            H_stop_range=H_stop_range,
-            fast=fast,
-        )
+        try:
+            return _sweep(
+                coef,
+                H0=H0,
+                M0=M0,
+                sign=sign,
+                saturation_susceptibility=saturation_susceptibility,
+                H_stop_range=H_stop_range,
+                fast=fast,
+            )
+        except Exception:
+            _logger.debug("Terminating sweep: %s sign=%d H0=%+f M0=%+f", coef, sign, H0, M0)
+            raise
 
     hm_virgin = do_sweep(0, 0, +1)
 
@@ -166,7 +170,7 @@ def _sweep(
     fast: bool,
     save_delta: npt.NDArray[np.float64] = np.array([3.0, 1.0], dtype=np.float64),
     tolerance_loosening_factor: float = 10.0,
-    worst_relative_tolerance: float = 0.02,
+    worst_relative_tolerance: float = 0.01,
 ) -> npt.NDArray[np.float64]:
     assert sign in (-1, +1)
     assert save_delta.shape == (2,)
@@ -276,7 +280,9 @@ def _make_solver(
         z = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=x, M=float(y[0]), direction=sign)
         return np.array([z], dtype=np.float64)
 
-    first_step = np.finfo(np.float64).eps * 10 * np.abs((H0, M0, 1)).max()
+    first_step = np.finfo(np.float64).eps * 100 * np.abs((H0, M0, 1)).max()
+    assert first_step > np.finfo(np.float64).eps
+    assert np.nextafter(H0, H0 + first_step * sign) != H0
 
     return scipy.integrate.Radau(  # Radau seems to be marginally more stable than BDF?
         rhs,
