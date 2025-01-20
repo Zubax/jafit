@@ -235,6 +235,7 @@ def _sweep(
         try:
             msg = solver.step()
         except (ZeroDivisionError, FloatingPointError) as ex:
+            _logger.debug("Stack trace for %s", type(ex).__name__, exc_info=True)
             raise NumericalError(f"#{idx*sign:+d} {H0=} {M0=} H={H_old} M={M_old}: {type(ex).__name__}: {ex}") from ex
 
         if solver.status not in ("running", "finished"):
