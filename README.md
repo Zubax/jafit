@@ -2,19 +2,27 @@
 
 [![Discuss - on Zubax Forum](https://img.shields.io/static/v1?label=Discuss&message=on+Zubax+Forum&color=ff0000)](https://forum.zubax.com)
 
-Jiles-Atherton system identification tool: Given a BH curve, finds the Jiles-Atherton model coefficients.
+Jiles-Atherton system identification tool: Given a hysteresis loop, finds the Jiles-Atherton model coefficients.
 
 <img src="image.png" width="800" alt="">
 
 ## Usage
 
-The tool accepts a tab-separated (TSV) or comma-separated (CSV) file encoding the reference BH curve
-as a command line argument (the type of file is auto-detected).
+The tool accepts the _reference B(H) curve_ file as a command line argument.
+It can be either a tab-separated (TSV) or comma-separated (CSV) text file.
 The first column contains the magnetic field strength H \[ampere/meter],
 and the second column contains the magnetic flux density B \[tesla].
-The file may contain either the entire hysteresis loop, or any part of it; e.g., only a part of the descending branch.
-If a full loop is provided, then that loop doesn't need to be the major loop.
 The first row may or may not be the header row.
+
+The reference curve may be either the entire hysteresis loop, or any part of it;
+e.g., only a part of the descending branch.
+If a full loop is provided, then that loop doesn't need to be the major loop;
+the tool will simply use the H amplitude seen in the reference loop for solving the JA equation.
+
+If the reference curve is only a part of the hysteresis loop,
+then the tool will use simple heuristics to guess the reasonable H amplitude for solving the JA equation,
+assuming that the loop is the major loop (i.e., it reaches saturation).
+In this case, it is recommended to specify the `H_max` parameter explicitly instead of relying on heuristics.
 
 Install the package before using it:
 
@@ -22,7 +30,7 @@ Install the package before using it:
 pip install .
 ```
 
-Derive parameters for a given BH curve as shown below.
+Derive parameters for a given B(H) curve as shown below.
 Be sure to launch the tool from a dedicated directory because it may generate a lot of intermediate output files.
 All pre-existing outputs in the current working directory are removed at startup.
 
@@ -76,7 +84,7 @@ There is a COMSOL model in the `validation` directory that contains a bored stee
 along its axis.
 The wire carries a 1 Hz magnetizing current whose amplitude is chosen to be just high enough to push the
 cylinder material into saturation, while the frequency is chosen to be low to avoid eddy currents.
-The setup is used to obtain the BH curve and ascertain that it matches the predictions made by the tool.
+The setup is used to obtain the J(H) curve and ascertain that it matches the predictions made by the tool.
 
 <img src="validation/B(t).gif" width="600px" alt="">
 

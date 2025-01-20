@@ -175,7 +175,7 @@ def do_fit(
                 H_c * 2,
                 M_s_min * 0.1,
             )
-        ), float(H_max or 5e6)
+        ), float(H_max or max(M_s_min * 2, H_c * 4))
     _logger.info("H amplitude range: %s [A/m]", H_stop)
 
     # Run the optimizer.
