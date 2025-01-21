@@ -350,9 +350,12 @@ def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float,
     assert sign in (-1, +1)
     H_e = H + alpha * M
     M_an = M_s * _langevin(H_e / a)
-    num = c_r * (M_s / a) * _dL_dx(H_e / a) + (1 - c_r) * ((M_an - M) / (k_p * sign * (1 - c_r) - alpha * (M_an - M)))
-    denom = 1 - alpha * c_r
-    return num / denom
+    dM1 = M_an - M
+    dM1 = max(dM1, 0.0) if sign > 0 else min(dM1, 0.0)
+    dM2 = (1 + c_r) * (sign * k_p - alpha * (M_an - M))
+    dM_an = M_s * _dL_dx(H_e / a) / a
+    dM3 = c_r / (1 + c_r) * dM_an
+    return dM1 / dM2 + dM3
 
 
 @njit
