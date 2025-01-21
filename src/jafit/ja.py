@@ -6,11 +6,12 @@ Jiles-Atherton solver.
 
 from __future__ import annotations
 from logging import getLogger
+import enum
 import dataclasses
 import numpy as np
 import numpy.typing as npt
 import scipy.integrate
-from .util import njit, relative_distance
+from .util import njit
 
 
 class SolverError(RuntimeError):
@@ -333,6 +334,20 @@ def _make_solver(
     )
 
 
+class Model(enum.IntEnum):
+    bulk_ferromagnetic = 0
+    """
+    Aka the R. Venkataraman model.
+    This model is apparently used in COMSOL and Altair Flux, as it yields exactly matching predictions,
+    compared to the simpler models.
+    """
+    dM_anhysteretic_dH_effective = 1
+    dM_anhysteretic_dH = 2
+
+
+_MODEL = Model.bulk_ferromagnetic
+
+
 @njit
 def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, sign: int) -> float:
     # noinspection PyTypeChecker,PyShadowingNames
@@ -351,11 +366,34 @@ def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float,
     H_e = H + alpha * M
     M_an = M_s * _langevin(H_e / a)
     dM1 = M_an - M
+    dM1_signed = dM1
     dM1 = max(dM1, 0.0) if sign > 0 else min(dM1, 0.0)
-    dM2 = (1 + c_r) * (sign * k_p - alpha * (M_an - M))
     dM_an = M_s * _dL_dx(H_e / a) / a
-    dM3 = c_r / (1 + c_r) * dM_an
-    return dM1 / dM2 + dM3
+    match _MODEL:
+        case Model.bulk_ferromagnetic:
+            dM2 = sign * k_p * c_r * dM_an + dM1
+            dM3 = sign * k_p - alpha * dM1 - sign * k_p * c_r * alpha * dM_an
+            return dM2 / _nonzero(dM3)
+
+        case Model.dM_anhysteretic_dH:
+            dM2 = dM1 / (sign * k_p - alpha * dM1_signed) + c_r * dM_an
+            dM3 = 1 + c_r - c_r * alpha * dM_an
+            return dM2 / _nonzero(dM3)
+
+        case Model.dM_anhysteretic_dH_effective:
+            dM2 = (1 + c_r) * (sign * k_p - alpha * (M_an - M))
+            dM3 = c_r / (1 + c_r) * dM_an
+            return dM1 / dM2 + dM3
+
+        case _:
+            return np.nan
+
+
+@njit
+def _nonzero(x: float, eps: float = 1e-15) -> float:
+    if np.abs(x) < eps:
+        return np.sign(x) * eps
+    return x
 
 
 @njit
