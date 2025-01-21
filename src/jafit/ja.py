@@ -314,7 +314,7 @@ def _make_solver(
     sign = int(np.sign(H_bound))
 
     def rhs(x: float, y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
-        z = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=x, M=float(y[0]), direction=sign)
+        z = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=x, M=float(y[0]), sign=sign)
         return np.array([z], dtype=np.float64)
 
     first_step = np.finfo(np.float64).eps * 100 * np.abs((H0, M0, 1)).max()
@@ -334,11 +334,11 @@ def _make_solver(
 
 
 @njit
-def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, direction: int) -> float:
+def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, sign: int) -> float:
     # noinspection PyTypeChecker,PyShadowingNames
     """
     Evaluates the magnetic susceptibility derivative at the given point of the M(H) curve.
-    The result is sensitive to the sign of the H change; the direction is defined as sign(dH).
+    The result is sensitive to sign(dH).
 
     >>> fun = lambda H, M, d: _dM_dH(**dataclasses.asdict(COEF_COMSOL_JA_MATERIAL), H=H, M=M, direction=d)
     >>> assert np.isclose(fun(0, 0, +1), fun(0, 0, -1))
@@ -347,12 +347,12 @@ def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float,
     >>> assert np.isclose(fun(-1, 0.8e6, +1), fun(+1, -0.8e6, -1))
     >>> assert np.isclose(fun(+1, 0.8e6, +1), fun(-1, -0.8e6, -1))
     """
-    assert direction in (-1, +1)
+    assert sign in (-1, +1)
     H_e = H + alpha * M
     M_an = M_s * _langevin(H_e / a)
-    dM_an_dH_e = M_s / a * _dL_dx(H_e / a)
-    dM_irr_dH = (M_an - M) / (k_p * direction * (1 - c_r) - alpha * (M_an - M))
-    return (c_r * dM_an_dH_e + (1 - c_r) * dM_irr_dH) / (1 - alpha * c_r)  # type: ignore
+    num = c_r * (M_s / a) * _dL_dx(H_e / a) + (1 - c_r) * ((M_an - M) / (k_p * sign * (1 - c_r) - alpha * (M_an - M)))
+    denom = 1 - alpha * c_r
+    return num / denom
 
 
 @njit
