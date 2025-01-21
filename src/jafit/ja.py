@@ -370,7 +370,7 @@ def _langevin(x: float) -> float:
 def _dL_dx(x: float) -> float:
     """
     Derivative of Langevin L(x) = coth(x) - 1/x.
-    d/dx [coth(x) - 1/x] = -csch^2(x) + 1/x^2.
+    d/dx [coth(x) - 1/x]  =  1 - coth(x)^2 + 1/x^2  =  -1/sinh(x)^2 + 1/x^2
     """
     # Danger! The small-value threshold has to be large here because the subsequent full form is very sensitive!
     if np.abs(x) < 1e-4:  # series expansion of L(x) ~ x/3 -> derivative ~ 1/3 near zero
@@ -379,9 +379,6 @@ def _dL_dx(x: float) -> float:
         # sinh(x) overflows float64 at x>710, sinh(x)**2 overflows at x>355;
         # in this case, apply approximation: the first term vanishes as -1/inf=0
         return 1.0 / (x**2)
-    # exact expression: -csch^2(x) + 1/x^2
-    # csch^2(x) = 1 / sinh^2(x)
-    # This explodes even if x is relatively large, so the small-value approximation above needs to use a wide margin.
     return -1.0 / (np.sinh(x) ** 2) + 1.0 / (x**2)  # type: ignore
 
 
