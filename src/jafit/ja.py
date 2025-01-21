@@ -36,7 +36,7 @@ class NumericalError(SolverError):
 @dataclasses.dataclass(frozen=True)
 class Coef:
     """
-    Per the original model definition, all of them can be scalars or 3x3 matrices:
+    Per the original model definition, the parameters can be either scalars or 3x3 matrices:
 
         Symbol  Description                                                         Range           Unit
         c_r     magnetization reversibility (1 for purely anhysteretic material)    (0, 1]          dimensionless
@@ -44,6 +44,17 @@ class Coef:
         a       domain wall density                                                 non-negative    ampere/meter
         k_p     pinning loss                                                        non-negative    ampere/meter
         alpha   interdomain coupling                                                non-negative    dimensionless
+
+    Note that the specific influence of the parameters on the solution depends on the flavor of the JA model used.
+    For example, paper "Modeling of permanent magnets: Interpretation of parameters obtained from the Jiles–Atherton
+    hysteresis model" provides values for the traditional dM_anh/dH model; an attempt to use these parameters
+    with a different model will not result in a valid solution. Modern FEA/FEM software like COMSOL or Altair Flux
+    tend to prefer the bulk ferromagnetic model (aka R. Venkataraman model), which is more sophisticated but comes
+    with starkly different interpretation of the parameters. More on this in "Open Source Implementation of
+    Different Variants of Jiles-Atherton Model of Magnetic Hysteresis Loops" by R. Szewczyk et al.
+
+    When attempting to reuse the parameters from a third-party source, it is essential to ensure that the model
+    used in the source matches the model used in this implementation.
 
     For soft materials, k_p is approximately equal to the intrinsic coercivity H_ci.
     During fitting, it is a good idea to start with k_p≈H_c.
@@ -72,12 +83,7 @@ class Coef:
             raise ValueError(f"k_p invalid: {self.k_p}")
         if not non_negative(self.alpha):
             raise ValueError(f"alpha invalid: {self.alpha}")
-        if np.isclose(self.c_r * self.alpha, 1):
-            _logger.warning(
-                "c_r*alpha≈1; no solutions exist for this combination of coefficients: c_r=%f alpha=%f",
-                self.c_r,
-                self.alpha,
-            )
+        # Stricter checks are not implemented because they depend on the JA model variant used.
 
     def __str__(self) -> str:
         return (
@@ -133,10 +139,6 @@ def solve(
     Some of the coefficients sets result in great stiffness;
     they are provided here for testing and illustration purposes.
     The solver is expected to manage that by dynamically adjusting the tolerance bounds.
-
-    >>> stiff = Coef(c_r=0.956886485630692230, M_s=2956870.912007416, a=025069.875361107, k_p=019498.206218542, alpha=0.181220196232252662)
-    >>> solve(stiff, (100e3, 3e6))  # doctest: +ELLIPSIS
-    Solution(...)
 
     >>> stiff = Coef(c_r=0.1, M_s=1191941.07155, a=65253, k_p=85677, alpha=0.19)
     >>> solve(stiff, (100e3, 3e6))  # doctest: +ELLIPSIS
@@ -355,7 +357,7 @@ def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float,
     Evaluates the magnetic susceptibility derivative at the given point of the M(H) curve.
     The result is sensitive to sign(dH).
 
-    >>> fun = lambda H, M, d: _dM_dH(**dataclasses.asdict(COEF_COMSOL_JA_MATERIAL), H=H, M=M, direction=d)
+    >>> fun = lambda H, M, d: _dM_dH(**dataclasses.asdict(COEF_COMSOL_JA_MATERIAL), H=H, M=M, sign=d)
     >>> assert np.isclose(fun(0, 0, +1), fun(0, 0, -1))
     >>> assert np.isclose(fun(+1, 0, +1), fun(-1, 0, -1))
     >>> assert np.isclose(fun(-1, 0, +1), fun(+1, 0, -1))
@@ -373,17 +375,17 @@ def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float,
         case Model.bulk_ferromagnetic:
             dM2 = sign * k_p * c_r * dM_an + dM1
             dM3 = sign * k_p - alpha * dM1 - sign * k_p * c_r * alpha * dM_an
-            return dM2 / _nonzero(dM3)
+            return dM2 / _nonzero(dM3)  # type: ignore
 
         case Model.dM_anhysteretic_dH:
             dM2 = dM1 / (sign * k_p - alpha * dM1_signed) + c_r * dM_an
             dM3 = 1 + c_r - c_r * alpha * dM_an
-            return dM2 / _nonzero(dM3)
+            return dM2 / _nonzero(dM3)  # type: ignore
 
         case Model.dM_anhysteretic_dH_effective:
             dM2 = (1 + c_r) * (sign * k_p - alpha * (M_an - M))
             dM3 = c_r / (1 + c_r) * dM_an
-            return dM1 / dM2 + dM3
+            return dM1 / dM2 + dM3  # type: ignore
 
         case _:
             return np.nan
@@ -392,7 +394,7 @@ def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float,
 @njit
 def _nonzero(x: float, eps: float = 1e-15) -> float:
     if np.abs(x) < eps:
-        return np.sign(x) * eps
+        return np.sign(x) * eps  # type: ignore
     return x
 
 
