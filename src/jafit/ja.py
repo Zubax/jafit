@@ -224,7 +224,7 @@ def _sweep(
     # Ideally, we should be able to adjust the tolerance on the go without discarding the solver, but the SciPy API
     # does not seem to support this, and I don't have the time to roll out my own implicit solver.
     rtol, atol = 1e-6, 1e-4
-    max_step = min(200.0, H_stop_range[0] / 200, H_stop_range[1] / 1000)
+    max_step = min(200.0, H_stop_range[0] / 200, H_stop_range[1] / 500)
     if fast:
         rtol, atol, max_step = [x * 10 for x in (rtol, atol, max_step)]
     _logger.debug(
