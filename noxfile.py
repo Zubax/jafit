@@ -61,13 +61,13 @@ def test(session: nox.Session) -> None:
 
     # Run the tool with coverage
     def run(args: str) -> None:
-        run_id = f"integration.{abs(hash(args)):016x}"
-        work_dir = Path(session.create_tmp()) / run_id
+        work_dir = Path(session.create_tmp()) / f"integration.{abs(hash(args)):016x}"
         work_dir.mkdir(parents=True)
         with session.chdir(work_dir):
             Path("args.txt").write_text(args)
-            session.run("coverage", "run", "-m", "jafit", *shlex.split(args))
-            shutil.move(".coverage", f"{ROOT}/.coverage.{run_id}")
+            session.run("coverage", "run", f"--rcfile={ROOT}/pyproject.toml", "-m", "jafit", *shlex.split(args))
+            for cf in Path().glob(".coverage*"):
+                shutil.move(cf, ROOT)
 
     run("model=ve c_r=0.1       M_s=1.6e6       a=560           k_p=1200         alpha=0.0007")
     run("model=po c_r=0.1       M_s=1.6e6       a=560           k_p=1200         alpha=0.0007")
