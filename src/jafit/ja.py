@@ -228,7 +228,8 @@ def _sweep(
     if fast:
         rtol, atol, max_step = [x * 10 for x in (rtol, atol, max_step)]
     _logger.debug(
-        "Starting sweep: H=[%+.f→%+.f] M0=%+.f tol=(%.1e×M+%.1e) max_step=%.1f",
+        "Starting sweep: %s H=[%+.f→%+.f] M0=%+.f tol=(%.1e×M+%.1e) max_step=%.1f",
+        coef,
         H0,
         H_bound,
         M0,
@@ -295,7 +296,13 @@ def _sweep(
         idx += 1
 
     if checkpoint is not None:
-        _logger.debug("Solved with degraded tolerance due to great stiffness: rtol=%.1e atol=%.1e", rtol, atol)
+        _logger.debug(
+            "Solved with degraded tolerance due to great stiffness: rtol=%.1e atol=%.1e nfev=%d njev=%d",
+            rtol,
+            atol,
+            solver.nfev,
+            solver.njev,
+        )
 
     return hm[:idx]
 
@@ -309,18 +316,24 @@ def _make_solver(
     rtol: float,
     atol: float,
     max_step: float,
+    max_evaluations: int = 10**9,
 ) -> scipy.integrate.OdeSolver:
     """
     tolerance=rtol*M+atol; rtol dominates at strong magnetization, atol dominates at weak magnetization.
+    max_evaluations is intended to prevent the solver from getting stuck in an infinite loop, which sometimes happens.
     """
     c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
     sign = int(np.sign(H_bound))
+    eval_cnt = 0
 
     def rhs(x: float, y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        nonlocal eval_cnt
+        if eval_cnt >= max_evaluations:
+            raise ConvergenceError(f"Exceeded max function evaluations ({max_evaluations}) at H={x} M={y[0]}")
         z = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=x, M=float(y[0]), sign=sign)
         return np.array([z], dtype=np.float64)
 
-    first_step = np.finfo(np.float64).eps * 100 * np.abs((H0, M0, 1)).max()
+    first_step = np.finfo(np.float64).eps * 1e3 * np.abs((H0, M0, 1)).max()
     assert first_step > np.finfo(np.float64).eps
     assert np.nextafter(H0, H0 + first_step * sign) != H0
 
