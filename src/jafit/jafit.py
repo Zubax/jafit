@@ -296,7 +296,9 @@ def run(
 ) -> None:
     H_stop: float | tuple[float, float]
     if ref is not None:
-        _logger.info("Fitting %s using %s model with starting parameters: %s", ref, model.name.lower(), cf)
+        _logger.info(
+            "Fitting %s using %s model with starting parameters: %s; effort=%d", ref, model.name.lower(), cf, effort
+        )
         coef, H_stop = do_fit(
             ref,
             model=model,

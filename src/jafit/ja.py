@@ -362,6 +362,7 @@ def _make_solver(
         nonlocal eval_cnt
         if eval_cnt >= max_evaluations:
             raise ConvergenceError(f"Exceeded max function evaluations ({max_evaluations}) at H={x} M={y[0]}")
+        eval_cnt += 1
         z = fun(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=x, M=float(y[0]), sign=sign)
         return np.array([z], dtype=np.float64)
 

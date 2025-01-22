@@ -44,14 +44,14 @@ Intermediate results and logs will be stored in the current working directory,
 so it may be a good idea to create a dedicated directory for this purpose.
 
 ```shell
-# Reproduce the model fitting utility from Altair Flux:
+# Fit the example curve from Altair Flux:
 jafit model=venk ref="data/Altair_Flux_HystereticExample.csv"
 
 # Find coefficients for isotropic AlNiCo 5:
 jafit model=venk ref="data/B(H).AlNiCo_5.tab"
 ```
 
-The curve file contains two columns: H \[A/m\] and B \[T\], either tab- or comma-separated.
+The input reference curve file must contain two columns: H \[A/m\] and B \[T\], either tab- or comma-separated.
 The first row may or may not be the header row.
 
 The reference curve may be either the entire hysteresis loop, or any part of it;
@@ -62,7 +62,7 @@ the tool will simply use the H amplitude seen in the reference loop for solving 
 If the reference curve is only a part of the hysteresis loop,
 then the tool will use simple heuristics to guess the reasonable H amplitude for solving the JA equation,
 assuming that the loop is the major loop (i.e., it reaches saturation).
-In this case, it is recommended to specify the `H_amp_max` parameter explicitly instead of relying on heuristics.
+In this case, it is recommended to specify `H_amp_min`/`H_amp_max` explicitly instead of relying on heuristics.
 
 Optionally, you can provide the initial guess for (some of) the coefficients: `c_r`, `M_s`, `a`, `k_p`, `alpha`.
 
@@ -78,18 +78,6 @@ For the benefit of all mankind, please only use SI units. To convert data from a
 - $1 \ \frac{\text{emu}}{\text{cm}^3} = 10^3 \frac{\text{A}}{\text{m}}$
 
 For more, refer to `papers/magnetic_units.pdf`.
-
-## Development
-
-To run verification locally, simply say `nox`.
-
-If you want to run PyTest only, you may want to `export NUMBA_DISABLE_JIT=1` beforehand, or uninstall Numba.
-
-To profile, go like: `python3 -m cProfile -o out.prof -m jafit ../data/bh-lng37.tab`.
-Then you can use `flameprof` to visualize the collected data.
-
-To evaluate the optimizer behaviors quickly, run the script in fast mode with `fast=1`.
-This may render the results inaccurate, but it will be much faster.
 
 ## Validation
 
@@ -135,3 +123,15 @@ jafit model=venk  H_amp_max=1111  c_r=0.2107788 M_s=1306755.22 a=108.694943 k_p=
 ```
 
 <img src="validation/jafit-altair-flux-example-material.png" alt="" height="200px"><img src="validation/Altair_Flux_example_material_curve.png" alt="" height="200px">
+
+## Development
+
+To run verification locally, simply say `nox`.
+
+If you want to run PyTest only, you may want to `export NUMBA_DISABLE_JIT=1` beforehand, or uninstall Numba.
+
+To profile, go like: `python3 -m cProfile -o out.prof -m jafit ../data/bh-lng37.tab`.
+Then you can use `flameprof` to visualize the collected data.
+
+To evaluate the optimizer behaviors quickly, run the script in fast mode with `fast=1`.
+This may render the results inaccurate, but it will be much faster.
