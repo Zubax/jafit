@@ -118,9 +118,13 @@ and compare them against the COMSOL simulation results.
 
 #### Specimen A: default Jiles-Atherton material
 
+Note that we're using the same H-field amplitude as in the COMSOL model.
+
 ```shell
-jafit model=venk H_amp_max=100e3 c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
+jafit model=venk H_amp_max=65e3 c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 ```
+
+<img src="validation/jafit-comsol-default-material.png" alt="" height="200px"><img src="validation/hysteresis-comsol-default-material.png" alt="" height="200px">
 
 ### Against Altair Flux
 
@@ -130,4 +134,4 @@ The following invocation results in a curve matching the example material from A
 jafit model=venk  H_amp_max=1111  c_r=0.2107788 M_s=1306755.22 a=108.694943 k_p=177.625645 alpha=0.000294224757
 ```
 
-<img src="validation/Altair_Flux_example_material_curve.png" alt="" width="600">
+<img src="validation/jafit-altair-flux-example-material.png" alt="" height="200px"><img src="validation/Altair_Flux_example_material_curve.png" alt="" height="200px">
