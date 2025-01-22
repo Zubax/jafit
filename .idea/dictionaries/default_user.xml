@@ -21,6 +21,7 @@
       <w>maxiter</w>
       <w>mticker</w>
       <w>multiphysics</w>
+      <w>nelder</w>
       <w>renormalize</w>
       <w>rtol</w>
       <w>szewczyk</w>

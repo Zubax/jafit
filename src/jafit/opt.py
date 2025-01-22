@@ -180,10 +180,9 @@ def fit_local(
         )
     else:
         _logger.info("Gradient-free local optimization: x_0=%s", x_0)
-        tol = 1e-9
         # https://docs.scipy.org/doc/scipy/reference/optimize.minimize-neldermead.html; "tol" sets "fatol" and "xatol"
         res = opt.minimize(
-            fun, v_0, method="Nelder-Mead", bounds=bounds, callback=cb, tol=tol, options={"maxiter": maxiter}
+            fun, v_0, method="Nelder-Mead", bounds=bounds, callback=cb, tol=1e-8, options={"maxiter": maxiter}
         )
 
     _logger.info("Local optimization result:\n%s", res)
