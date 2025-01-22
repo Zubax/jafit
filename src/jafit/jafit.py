@@ -18,7 +18,7 @@ import numpy as np
 from .ja import Solution, Coef, solve, SolverError, Model
 from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, mu_0, hm_to_hj
 from .opt import fit_global, fit_local, make_objective_function
-from . import loss, io, vis
+from . import loss, io, vis, __version__
 
 
 PLOT_FILE_SUFFIX = ".jafit.png"
@@ -306,7 +306,6 @@ def run(
         # noinspection PyTypeChecker
         print(*(f"{k}={v}" for k, v in dataclasses.asdict(coef).items()))
     else:
-        _logger.info("No BH curve given, fitting will not be performed")
         if any(x is None for x in cf.values()):
             raise ValueError(f"Supplied coefficients are incomplete, and optimization is not requested: {cf}")
         coef = Coef(**cf)  # type: ignore
@@ -339,6 +338,7 @@ def run(
 def main() -> None:
     try:
         _setup_logging()
+        _logger.debug("jafit v%s", __version__)
         _cleanup()
         np.seterr(divide="raise", over="raise")
         unnamed, named = _parse_args(sys.argv[1:])
