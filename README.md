@@ -21,6 +21,8 @@ The tool works on GNU/Linux and Windows. Probably also on macOS, but YMMV.
 
 ### Solve the JA equation
 
+The tool will plot the curves and export table files containing the data points.
+
 ```shell
 # Coefficients from the default COMSOL Jiles-Atherton material model:
 jafit model=venk  c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
@@ -91,47 +93,41 @@ This may render the results inaccurate, but it will be much faster.
 
 ## Validation
 
+### Against COMSOL Multiphysics
+
 There is a COMSOL model in the `validation` directory that contains a bored steel cylinder with a copper wire passing
 along its axis.
-The wire carries a 1 Hz magnetizing current whose amplitude is chosen to be just high enough to push the
-cylinder material into saturation, while the frequency is chosen to be low to avoid eddy currents.
+
+If $B = \mu_0 (H_i + M)$ and $H_i = H - H_d$, where $H_i$ is the internal field and
+$H_d = M N_d$ is the demagnetizing field with the demagnetizing factor $N_d$,
+then $B = \mu_0 (H - N_d M + M)$.
+Since $N_d = 0$ in the absence of free poles, the validation is performed using a loop-shaped magnet
+with a magnetization wire passing through the center, which ensures $B = \mu_0 (H + M)$.
+
+The wire carries AC magnetizing current whose amplitude is chosen to be just high enough to push the
+cylinder material into saturation, while the frequency is chosen to be low to avoid eddy currents
+and small-time-scale coercivity effects.
 The setup is used to obtain the J(H) curve and ascertain that it matches the predictions made by the tool.
 
-<img src="validation/B(t).gif" width="600px" alt="">
+<img src="validation/COMSOL_B(t).gif" width="600px" alt="">
 
 To make the prediction, run the tool specifying the JA model coefficients copied from the material properties
 assigned to the cylinder in the COMSOL model,
-note the predicted $H_c$, $B_r$, and $BH_\text{max}$,
-and compare them against the values seen in the COMSOL model.
+note the shape of the curve and the predicted $H_c$, $B_r$, and $BH_\text{max}$,
+and compare them against the COMSOL simulation results.
 
-### Specimen A
-
-```shell
-jafit c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
-```
-
-<img src="validation/H(t),M(t),B(t) c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007.png" width="400px" alt=""><img src="validation/hysteresis c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007.png" width="400px" alt="">
-
-### Specimen B
+#### Specimen A: default Jiles-Atherton material
 
 ```shell
-jafit c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001
+jafit model=venk H_amp_max=100e3 c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 ```
 
-<img src="validation/H(t),M(t),B(t) c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="400px" alt=""><img src="validation/hysteresis c_r=0.8 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="400px" alt="">
+### Against Altair Flux
 
-### Specimen C
+The following invocation results in a curve matching the example material from Altair Flux.
 
 ```shell
-jafit c_r=0.5 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001
+jafit model=venk  H_amp_max=1111  c_r=0.2107788 M_s=1306755.22 a=108.694943 k_p=177.625645 alpha=0.000294224757
 ```
 
-<img src="validation/hysteresis c_r=0.5 M_s=1.6e6 a=56000 k_p=50000 alpha=0.001.png" width="400px" alt="">  
-
-### Specimen D
-
-```shell
-jafit c_r=0.1 M_s=1191941.07155 a=65253 k_p=85677 alpha=0.19
-```
-
-<img src="validation/hysteresis c_r=0.1 M_s=1191941.07155 a=65253 k_p=85677 alpha=0.19.png" width="400px" alt="">  
+<img src="validation/Altair_Flux_example_material_curve.png" alt="" width="600">
