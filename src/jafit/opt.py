@@ -7,12 +7,12 @@ Optimization utilities.
 import time
 import warnings
 import dataclasses
-from typing import Callable, Any
+from typing import Callable
 from logging import getLogger
 import numpy as np
 import numpy.typing as npt
 import scipy.optimize as opt
-from .ja import Solution, Coef, solve, SolverError
+from .ja import Solution, Coef, SolverError
 from .mag import HysteresisLoop
 
 
@@ -25,6 +25,8 @@ class ObjectiveFunctionResult:
 
 ObjectiveFunction = Callable[[Coef], ObjectiveFunctionResult]
 
+SolveFunction = Callable[[Coef], Solution]
+
 LossFunction = Callable[[HysteresisLoop, HysteresisLoop], float]
 """
 The first is the reference, the second is the evaluated solution.
@@ -33,14 +35,13 @@ The first is the reference, the second is the evaluated solution.
 
 def make_objective_function(
     ref: HysteresisLoop,
+    solve_fun: SolveFunction,
     loss_fun: LossFunction,
     *,
-    H_stop: tuple[float, float] | float,
     callback: Callable[[int, Coef, tuple[Solution, float] | Exception], None],
     decimate_solution_to: int = 10_000,
     stop_loss: float = -np.inf,
     stop_evals: int = 10**10,
-    solver_extra_args: dict[str, Any] | None = None,
 ) -> ObjectiveFunction:
     """
     WARNING: cb_on_best() may be invoked from a different thread concurrently!.
@@ -57,7 +58,7 @@ def make_objective_function(
         started_at = time.monotonic()
         elapsed_loss = 0.0
         try:
-            sol = solve(c, H_stop=H_stop, **(solver_extra_args or {}))
+            sol = solve_fun(c)
         except SolverError as ex:
             callback(this_epoch, c, ex)
             error = f"{type(ex).__name__}: {ex}"
@@ -179,10 +180,9 @@ def fit_local(
         )
     else:
         _logger.info("Gradient-free local optimization: x_0=%s", x_0)
-        tol = 1e-12
         # https://docs.scipy.org/doc/scipy/reference/optimize.minimize-neldermead.html; "tol" sets "fatol" and "xatol"
         res = opt.minimize(
-            fun, v_0, method="Nelder-Mead", bounds=bounds, callback=cb, tol=tol, options={"maxiter": maxiter}
+            fun, v_0, method="Nelder-Mead", bounds=bounds, callback=cb, tol=1e-8, options={"maxiter": maxiter}
         )
 
     _logger.info("Local optimization result:\n%s", res)

@@ -6,11 +6,44 @@ Jiles-Atherton solver.
 
 from __future__ import annotations
 from logging import getLogger
+import time
+import enum
 import dataclasses
 import numpy as np
 import numpy.typing as npt
 import scipy.integrate
-from .util import njit, relative_distance
+from .util import njit
+
+
+class Model(enum.IntEnum):
+    """
+    The Jiles-Atherton model comes in various variants that may yield very different solutions for the
+    same model coefficients. When attempting to reuse the parameters from a third-party source,
+    it is essential to ensure that the model used in the source matches the selected model.
+    """
+
+    ORIGINAL = 0
+    """
+    The original Jiles-Atherton model.
+    """
+
+    VENKATARAMAN = 1
+    """
+    Aka the bulk ferromagnetic hysteresis model. The predictions of this model match COMSOL and Altair Flux.
+    """
+
+    SZEWCZYK = 2
+    """
+    This model uses the anhysteretic magnetization differential over the effective magnetizing field instead
+    of the total magnetizing field.
+    See "Open Source Implementation of Different Variants of Jiles-Atherton Model of Magnetic Hysteresis Loops".
+    """
+
+    POP = 3
+    """
+    The dM/dH model described in "Jiles–Atherton Magnetic Hysteresis Parameters Identification", Pop et al.
+    This model does not introduce sign discontinuities at the switching points.
+    """
 
 
 class SolverError(RuntimeError):
@@ -32,23 +65,27 @@ class NumericalError(SolverError):
     pass
 
 
+class StuckError(ConvergenceError):
+    pass
+
+
 @dataclasses.dataclass(frozen=True)
 class Coef:
     """
-    Per the original model definition, all of them can be scalars or 3x3 matrices:
+    Per the original model definition, the parameters can be either scalars or 3x3 matrices:
 
         Symbol  Description                                                         Range           Unit
         c_r     magnetization reversibility (1 for purely anhysteretic material)    (0, 1]          dimensionless
         M_s     saturation magnetization                                            non-negative    ampere/meter
         a       domain wall density                                                 non-negative    ampere/meter
-        k_p     pinning loss                                                        non-negative    ampere/meter
+        k_p     domain wall pinning loss                                            non-negative    ampere/meter
         alpha   interdomain coupling                                                non-negative    dimensionless
+
+    The specific influence of the parameters on the solution depends on the variant of the JA model used.
+    See the Model enum for the available variants.
 
     For soft materials, k_p is approximately equal to the intrinsic coercivity H_ci.
     During fitting, it is a good idea to start with k_p≈H_c.
-
-    Large values of alpha may undermine the numerical stability of the solver because it may cause small denominators
-    to occur during the dM/dH computation.
     """
 
     c_r: float
@@ -71,12 +108,7 @@ class Coef:
             raise ValueError(f"k_p invalid: {self.k_p}")
         if not non_negative(self.alpha):
             raise ValueError(f"alpha invalid: {self.alpha}")
-        if np.isclose(self.c_r * self.alpha, 1):
-            _logger.warning(
-                "c_r*alpha≈1; no solutions exist for this combination of coefficients: c_r=%f alpha=%f",
-                self.c_r,
-                self.alpha,
-            )
+        # Stricter checks are not implemented because they depend on the JA model variant used.
 
     def __str__(self) -> str:
         return (
@@ -87,13 +119,6 @@ class Coef:
             f"k_p={self.k_p:016.9f}, "
             f"alpha={self.alpha:.17f})"
         )
-
-
-COEF_COMSOL_JA_MATERIAL = Coef(c_r=0.1, M_s=1.6e6, a=560, k_p=1200, alpha=0.0007)
-"""
-Values are taken from the material properties named "Jiles-Atherton Hysteretic Material" in COMSOL Multiphysics.
-Useful for testing and validation.
-"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -109,6 +134,7 @@ class Solution:
 
 
 def solve(
+    model: Model,
     coef: Coef,
     H_stop: tuple[float, float] | float,
     *,
@@ -129,16 +155,20 @@ def solve(
     If ``H_stop`` is a scalar, the sweep will have a fixed H amplitude of that value.
     If the ``H_stop`` amplitude is not enough to saturate the material, the resulting loop will be a minor one.
 
-    Some of the coefficients sets result in great stiffness;
-    they are provided here for testing and illustration purposes.
-    The solver is expected to manage that by dynamically adjusting the tolerance bounds.
-
-    >>> stiff = Coef(c_r=0.956886485630692230, M_s=2956870.912007416, a=025069.875361107, k_p=019498.206218542, alpha=0.181220196232252662)
-    >>> solve(stiff, (100e3, 3e6))  # doctest: +ELLIPSIS
-    Solution(...)
+    Some of the coefficients sets result in great stiffness; they are provided here for testing and illustration
+    purposes. The solver manages that by dynamically adjusting the tolerance bounds.
 
     >>> stiff = Coef(c_r=0.1, M_s=1191941.07155, a=65253, k_p=85677, alpha=0.19)
-    >>> solve(stiff, (100e3, 3e6))  # doctest: +ELLIPSIS
+    >>> solve(Model.VENKATARAMAN, stiff, (100e3, 3e6))  # doctest: +ELLIPSIS
+    Solution(...)
+    >>> solve(Model.ORIGINAL, stiff, (100e3, 3e6))  # doctest: +ELLIPSIS
+    Solution(...)
+    >>> solve(Model.SZEWCZYK, stiff, (100e3, 3e6))  # doctest: +ELLIPSIS
+    Solution(...)
+
+    >>> stiff = Coef(c_r=0.956886485630692230, M_s=2956870.912007416, a=025069.875361107, k_p=019498.206218542,
+    ...              alpha=0.181220196232252662)
+    >>> solve(Model.POP, stiff, (100e3, 3e6))  # doctest: +ELLIPSIS
     Solution(...)
     """
     if fast:
@@ -154,6 +184,7 @@ def solve(
     def do_sweep(H0: float, M0: float, sign: int) -> npt.NDArray[np.float64]:
         try:
             return _sweep(
+                model,
                 coef,
                 H0=H0,
                 M0=M0,
@@ -186,6 +217,7 @@ def solve(
 
 
 def _sweep(
+    model: Model,
     coef: Coef,
     *,
     H0: float,
@@ -204,11 +236,10 @@ def _sweep(
     H_bound = H_stop_range[1] * sign
 
     # Initially, I tried solving this equation using explicit methods, specifically RK4 and Dormand-Prince (RK45)
-    # (see the git history for details).
-    # However, the equation can be quite stiff at certain coefficients that do occur in practice with some softer
-    # materials, like certain AlNiCo grades, which causes explicit solvers to diverge even at very fine steps.
-    # Hence, it appears to be necessary to employ implicit methods. Note though that we sweep H back and forth
-    # manually, so our overall approach perhaps should be called semi-implicit.
+    # (see the git history for details). However, the equation can be quite stiff with certain coefficients,
+    # which causes explicit solvers to fail to converge or resort to unreasonably small steps. Hence, it appears
+    # to be necessary to employ implicit methods. Note though that we sweep H back and forth manually,
+    # so our overall approach perhaps should be called semi-implicit.
     #
     # Here we implement an adaptive tolerance method which I am very pleased with: we start out with a good tolerance
     # setting and try solving the equation. If the solver fails to converge due to stiffness at some point,
@@ -218,14 +249,16 @@ def _sweep(
     # which may result in discontinuities in the solution, so it is desirable to keep the switching points to
     # the minimum, which is one.
     #
-    # Ideally, we should be able to adjust the tolerance on the go without discarding the solver, but the SciPy API
-    # does not seem to support this, and I don't have the time to roll out my own implicit solver.
+    # Ideally, we should be able to adjust the tolerance on the go without discarding the solver state,
+    # but the SciPy API does not seem to support this, and I don't have the time to roll out my own implicit solver.
     rtol, atol = 1e-6, 1e-4
-    max_step = min(200.0, H_stop_range[0] / 200, H_stop_range[1] / 1000)
+    max_step = min(200.0, H_stop_range[0] / 200, H_stop_range[1] / 500)
     if fast:
         rtol, atol, max_step = [x * 10 for x in (rtol, atol, max_step)]
     _logger.debug(
-        "Starting sweep: H=[%+.f→%+.f] M0=%+.f tol=(%.1e×M+%.1e) max_step=%.1f",
+        "Starting sweep: %s %s H=[%+.f→%+.f] M0=%+.f tol=(%.1e×M+%.1e) max_step=%.1f",
+        model,
+        coef,
         H0,
         H_bound,
         M0,
@@ -233,7 +266,7 @@ def _sweep(
         atol,
         max_step,
     )
-    solver = _make_solver(coef, H0, M0, H_bound, rtol=rtol, atol=atol, max_step=max_step)
+    solver = _make_solver(model, coef, H0, M0, H_bound, rtol=rtol, atol=atol, max_step=max_step)
     hm = np.empty((10**7, 2), dtype=np.float64)
     hm[0] = H0, M0
     idx = 1
@@ -272,7 +305,7 @@ def _sweep(
                 checkpoint = idx, float(H_old), float(M_old)  # If it fails again, rollback to this point
             else:
                 idx, H_old, M_old = checkpoint
-            solver = _make_solver(coef, H_old, M_old, H_bound, rtol=rtol, atol=atol, max_step=max_step)
+            solver = _make_solver(model, coef, H_old, M_old, H_bound, rtol=rtol, atol=atol, max_step=max_step)
             continue
 
         mew = solver.t, solver.y[0]
@@ -292,13 +325,20 @@ def _sweep(
         idx += 1
 
     if checkpoint is not None:
-        _logger.debug("Solved with degraded tolerance due to great stiffness: rtol=%.1e atol=%.1e", rtol, atol)
+        _logger.debug(
+            "Solved with degraded tolerance due to great stiffness: rtol=%.1e atol=%.1e nfev=%d njev=%d",
+            rtol,
+            atol,
+            solver.nfev,
+            solver.njev,
+        )
 
     return hm[:idx]
 
 
 # noinspection PyUnresolvedReferences
 def _make_solver(
+    model: Model,
     coef: Coef,
     H0: float,
     M0: float,
@@ -306,18 +346,34 @@ def _make_solver(
     rtol: float,
     atol: float,
     max_step: float,
+    timeout: float = 600.0,
 ) -> scipy.integrate.OdeSolver:
     """
     tolerance=rtol*M+atol; rtol dominates at strong magnetization, atol dominates at weak magnetization.
+    The timeout is intended to prevent the solver from getting stuck in an infinite loop, which sometimes happens.
     """
     c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
     sign = int(np.sign(H_bound))
+    eval_cnt = 0
+    deadline = time.monotonic() + timeout
+
+    fun = {
+        Model.ORIGINAL: _dM_dH_original,
+        Model.VENKATARAMAN: _dM_dH_venkataraman,
+        Model.SZEWCZYK: _dM_dH_szewczyk,
+        Model.POP: _dM_dH_pop,
+    }[model]
 
     def rhs(x: float, y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
-        z = _dM_dH(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=x, M=float(y[0]), direction=sign)
+        nonlocal eval_cnt
+        if (eval_cnt % 10000 == 0) and (time.monotonic() > deadline):
+            raise StuckError(f"Timed out at eval #{eval_cnt} H={x} M={y[0]}")
+        eval_cnt += 1
+
+        z = fun(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=x, M=float(y[0]), sign=sign)
         return np.array([z], dtype=np.float64)
 
-    first_step = np.finfo(np.float64).eps * 100 * np.abs((H0, M0, 1)).max()
+    first_step = np.finfo(np.float64).eps * 1e3 * np.abs((H0, M0, 1)).max()
     assert first_step > np.finfo(np.float64).eps
     assert np.nextafter(H0, H0 + first_step * sign) != H0
 
@@ -333,26 +389,74 @@ def _make_solver(
     )
 
 
-@njit
-def _dM_dH(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, direction: int) -> float:
-    # noinspection PyTypeChecker,PyShadowingNames
-    """
-    Evaluates the magnetic susceptibility derivative at the given point of the M(H) curve.
-    The result is sensitive to the sign of the H change; the direction is defined as sign(dH).
+# === === === === === === === === === ===  SUSCEPTIBILITY DIFFERENTIALS  === === === === === === === === === ===
 
-    >>> fun = lambda H, M, d: _dM_dH(**dataclasses.asdict(COEF_COMSOL_JA_MATERIAL), H=H, M=M, direction=d)
+
+@njit
+def _dM_dH_original(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, sign: int) -> float:
+    """The original Jiles-Atherton formulation."""
+    H_e = H + alpha * M
+    dM1_signed = M_s * _langevin(H_e / a) - M
+    dM1 = max(dM1_signed, 0.0) if sign > 0 else min(dM1_signed, 0.0)
+    dM_an = M_s * _dL_dx(H_e / a) / a
+    dM2 = dM1 / (sign * k_p - alpha * dM1_signed) + c_r * dM_an
+    dM3 = 1 + c_r - c_r * alpha * dM_an
+    return dM2 / _nonzero(dM3)  # type: ignore
+
+
+@njit
+def _dM_dH_venkataraman(
+    c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, sign: int
+) -> float:
+    # noinspection PyShadowingNames
+    """
+    The bulk ferromagnetic hysteresis model by R. Venkataraman.
+
+    >>> fun = lambda H, M, d: _dM_dH_venkataraman(c_r=0.1, M_s=1.6e6, a=560, k_p=1200, alpha=0.0007, H=H, M=M, sign=d)
     >>> assert np.isclose(fun(0, 0, +1), fun(0, 0, -1))
     >>> assert np.isclose(fun(+1, 0, +1), fun(-1, 0, -1))
     >>> assert np.isclose(fun(-1, 0, +1), fun(+1, 0, -1))
     >>> assert np.isclose(fun(-1, 0.8e6, +1), fun(+1, -0.8e6, -1))
     >>> assert np.isclose(fun(+1, 0.8e6, +1), fun(-1, -0.8e6, -1))
     """
-    assert direction in (-1, +1)
+    H_e = H + alpha * M
+    dM1 = M_s * _langevin(H_e / a) - M
+    dM1 = max(dM1, 0.0) if sign > 0 else min(dM1, 0.0)
+    dM_an = M_s * _dL_dx(H_e / a) / a
+    dM2 = sign * k_p * c_r * dM_an + dM1
+    dM3 = sign * k_p - alpha * dM1 - sign * k_p * c_r * alpha * dM_an
+    return dM2 / _nonzero(dM3)  # type: ignore
+
+
+@njit
+def _dM_dH_szewczyk(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, sign: int) -> float:
+    """
+    The dM_an/dH_e model described in "Open Source Implementation of Different Variants of Jiles-Atherton
+    Model of Magnetic Hysteresis Loops", Szewczyk et al.
+    """
+    H_e = H + alpha * M
+    M_an = M_s * _langevin(H_e / a)
+    dM1 = max(M_an - M, 0.0) if sign > 0 else min(M_an - M, 0.0)
+    dM_an = M_s * _dL_dx(H_e / a) / a
+    dM2 = (1 + c_r) * (sign * k_p - alpha * (M_an - M))
+    dM3 = c_r / (1 + c_r) * dM_an
+    return dM1 / dM2 + dM3  # type: ignore
+
+
+@njit
+def _dM_dH_pop(c_r: float, M_s: float, a: float, k_p: float, alpha: float, H: float, M: float, sign: int) -> float:
+    """
+    The dM/dH model described in "Jiles–Atherton Magnetic Hysteresis Parameters Identification", Pop et al.
+    This model does not introduce sign discontinuities at the switching points.
+    """
     H_e = H + alpha * M
     M_an = M_s * _langevin(H_e / a)
     dM_an_dH_e = M_s / a * _dL_dx(H_e / a)
-    dM_irr_dH = (M_an - M) / (k_p * direction * (1 - c_r) - alpha * (M_an - M))
+    dM_irr_dH = (M_an - M) / (k_p * sign * (1 - c_r) - alpha * (M_an - M))
     return (c_r * dM_an_dH_e + (1 - c_r) * dM_irr_dH) / (1 - alpha * c_r)  # type: ignore
+
+
+# === === === === === === === === === ===  INTERNAL UTILITIES  === === === === === === === === === ===
 
 
 @njit
@@ -370,7 +474,7 @@ def _langevin(x: float) -> float:
 def _dL_dx(x: float) -> float:
     """
     Derivative of Langevin L(x) = coth(x) - 1/x.
-    d/dx [coth(x) - 1/x] = -csch^2(x) + 1/x^2.
+    d/dx [coth(x) - 1/x]  =  1 - coth(x)^2 + 1/x^2  =  -1/sinh(x)^2 + 1/x^2
     """
     # Danger! The small-value threshold has to be large here because the subsequent full form is very sensitive!
     if np.abs(x) < 1e-4:  # series expansion of L(x) ~ x/3 -> derivative ~ 1/3 near zero
@@ -379,10 +483,14 @@ def _dL_dx(x: float) -> float:
         # sinh(x) overflows float64 at x>710, sinh(x)**2 overflows at x>355;
         # in this case, apply approximation: the first term vanishes as -1/inf=0
         return 1.0 / (x**2)
-    # exact expression: -csch^2(x) + 1/x^2
-    # csch^2(x) = 1 / sinh^2(x)
-    # This explodes even if x is relatively large, so the small-value approximation above needs to use a wide margin.
     return -1.0 / (np.sinh(x) ** 2) + 1.0 / (x**2)  # type: ignore
+
+
+@njit
+def _nonzero(x: float, eps: float = 1e-20) -> float:
+    if np.abs(x) < eps:
+        return np.sign(x) * eps  # type: ignore
+    return x
 
 
 _logger = getLogger(__name__)

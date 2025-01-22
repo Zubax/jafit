@@ -11,14 +11,14 @@ import sys
 import time
 import dataclasses
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, TypeVar, Iterable, Any
+from typing import Callable, TypeVar, Iterable, Any, overload
 import logging
 from pathlib import Path
 import numpy as np
-from .ja import Solution, Coef, solve, SolverError
+from .ja import Solution, Coef, solve, SolverError, Model
 from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, mu_0, hm_to_hj
 from .opt import fit_global, fit_local, make_objective_function
-from . import loss, io, vis
+from . import loss, io, vis, __version__
 
 
 PLOT_FILE_SUFFIX = ".jafit.png"
@@ -88,17 +88,21 @@ def make_callback(
 def do_fit(
     ref: HysteresisLoop,
     *,
+    model: Model,
     c_r: float | None,
     M_s: float | None,
     a: float | None,
     k_p: float | None,
     alpha: float | None,
-    H_max: float | None,
+    H_amp_max: float | None,
     max_evaluations_per_stage: int,
-    skip_stages: int,
+    stage: int,
     plot_failed: bool,
     fast: bool,
-) -> Coef:
+) -> tuple[
+    Coef,
+    tuple[float, float] | float,
+]:
     if fast:
         _logger.warning("⚠ Fast mode is enabled; the solver may produce inaccurate results or fail to converge.")
 
@@ -154,7 +158,7 @@ def do_fit(
         alpha=_perhaps(alpha, 0.001),
     )
     x_min = Coef(c_r=1e-9, M_s=M_s_min, a=1e-6, k_p=1e-6, alpha=1e-12)
-    # TODO: better way of setting the upper bounds?
+    # TODO: We need a better way of setting the upper bound. The sensible limits also depend on the model used.
     x_max = Coef(c_r=0.999999, M_s=3e6, a=3e6, k_p=3e6, alpha=0.9)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
 
@@ -165,7 +169,7 @@ def do_fit(
     H_stop: tuple[float, float] | float
     if ref_original.is_full:
         # If we have the full loop, simply replicate its H-range. The loop may be a minor one.
-        H_stop = max(float(np.abs(ref_original.H_range).max()), H_max or 0)
+        H_stop = max(float(np.abs(ref_original.H_range).max()), H_amp_max or 0)
     else:
         # If we only have a part of the loop, assume that part belongs to the major loop.
         # We have to employ heuristics to determine when to stop the sweep.
@@ -175,11 +179,11 @@ def do_fit(
                 H_c * 2,
                 M_s_min * 0.1,
             )
-        ), float(H_max or max(100e3, M_s_min * 2, H_c * 4))
+        ), float(H_amp_max or max(100e3, M_s_min * 2, H_c * 4))
     _logger.info("H amplitude range: %s [A/m]", H_stop)
 
     # Run the optimizer.
-    if (H_c > 100 and B_r > 0.1) and skip_stages < 1:
+    if (H_c > 100 and B_r > 0.1) and stage < 1:
         _logger.info("Demag knee detected; performing initial H_c|B_r|BH_max optimization")
         coef = fit_global(
             x_0=coef,
@@ -187,12 +191,11 @@ def do_fit(
             x_max=x_max,
             obj_fn=make_objective_function(
                 ref_original,  # Here we're using the non-interpolated curve.
+                lambda c: solve(model, c, H_stop, fast=fast),
                 loss.demag_key_points,
-                H_stop=H_stop,
                 stop_loss=0.01,  # Fine adjustment is meaningless the loss fun is crude here.
                 stop_evals=max_evaluations_per_stage,
                 callback=make_callback("0_initial", ref_original, plot_failed=plot_failed),
-                solver_extra_args=dict(fast=fast),
             ),
             tolerance=1e-3,
         )
@@ -200,18 +203,17 @@ def do_fit(
     else:
         _logger.info("Skipping initial optimization")
 
-    if skip_stages < 2:
+    if stage < 2:
         coef = fit_global(
             x_0=coef,
             x_min=x_min,
             x_max=x_max,
             obj_fn=make_objective_function(
                 ref_interpolated,
+                lambda c: solve(model, c, H_stop, fast=fast),
                 loss.nearest,
-                H_stop=H_stop,
                 stop_evals=max_evaluations_per_stage,
                 callback=make_callback("1_global", ref_interpolated, plot_failed=plot_failed),
-                solver_extra_args=dict(fast=fast),
             ),
             tolerance=1e-7,
         )
@@ -223,8 +225,8 @@ def do_fit(
         x_max=x_max,
         obj_fn=make_objective_function(
             ref_interpolated,
+            lambda c: solve(model, c, H_stop),
             loss.nearest,
-            H_stop=H_stop,
             stop_evals=max_evaluations_per_stage,
             callback=make_callback("2_local", ref_interpolated, plot_failed=plot_failed),
         ),
@@ -238,7 +240,7 @@ def do_fit(
         if np.isclose(v, lo, rtol, atol) or np.isclose(v, hi, rtol, atol):
             _logger.warning("Final %s=%.9f is close to the bounds [%.9f, %.9f]", k, v, lo, hi)
 
-    return coef
+    return coef, H_stop
 
 
 def plot(
@@ -282,60 +284,45 @@ def plot_error(ex: SolverError, coef: Coef, plot_file: Path | str) -> None:
 
 
 def run(
-    ref_file_path: str | None = None,
-    *unnamed_args: str,
-    c_r: float | None = None,
-    M_s: float | None = None,
-    a: float | None = None,
-    k_p: float | None = None,
-    alpha: float | None = None,
-    H_min: float = 0,
-    H_max: float | None = None,
-    effort: int = 10**7,
-    skip_stages: int = 0,
-    plot_failed: bool = False,
-    fast: bool = False,
-    **named_args: dict[str, int | float | str],
+    model: Model,
+    ref: HysteresisLoop | None,
+    cf: dict[str, float | None],
+    H_amp_min: float | None,
+    H_amp_max: float | None,
+    effort: int,
+    stage: int,
+    plot_failed: bool,
+    fast: bool,
 ) -> None:
-    if unnamed_args or named_args:
-        raise ValueError(f"Unexpected arguments:\nunnamed: {unnamed_args}\nnamed: {named_args}")
-
-    ja_dict = {
-        k: (float(v) if v is not None else None) for k, v in dict(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha).items()
-    }
-    H_max = float(H_max) if H_max is not None else None
-    effort = int(effort)
-    effort = int(effort)
-    skip_stages = int(skip_stages)
-    plot_failed = bool(plot_failed)
-    fast = bool(fast)
-
-    ref = io.load(Path(ref_file_path)) if ref_file_path else None
+    H_stop: float | tuple[float, float]
     if ref is not None:
-        _logger.info("Fitting %s with starting parameters: %s", ref, ja_dict)
-        coef = do_fit(
+        _logger.info(
+            "Fitting %s using %s model with starting parameters: %s; effort=%d", ref, model.name.lower(), cf, effort
+        )
+        coef, H_stop = do_fit(
             ref,
-            **ja_dict,
-            H_max=H_max,
+            model=model,
+            **cf,
+            H_amp_max=H_amp_max,
             max_evaluations_per_stage=effort,
-            skip_stages=skip_stages,
+            stage=stage,
             plot_failed=plot_failed,
             fast=fast,
         )
         # noinspection PyTypeChecker
         print(*(f"{k}={v}" for k, v in dataclasses.asdict(coef).items()))
     else:
-        _logger.info("No BH curve given, fitting will not be performed")
-        if any(x is None for x in ja_dict.values()):
-            raise ValueError(f"Supplied coefficients are incomplete, and optimization is not requested: {ja_dict}")
-        coef = Coef(**ja_dict)  # type: ignore
+        if any(x is None for x in cf.values()):
+            raise ValueError(f"Supplied coefficients are incomplete, and optimization is not requested: {cf}")
+        coef = Coef(**cf)  # type: ignore
+        H_amp_min = H_amp_min or max(coef.k_p * 2, 100e3)  # In soft materials k_p≈H_ci
+        H_amp_max = H_amp_max or max(coef.M_s * 2, 1e6)
+        H_stop = H_amp_min, H_amp_max
 
     # Solve with the coefficients and plot the results.
-    _logger.info("Solving and plotting: %s", coef)
-    if H_min < 1e-9:
-        H_min = max(coef.k_p * 2, 100e3)  # For soft materials, k_p≈H_ci; this is a good guess for H_min.
+    _logger.info("Solving and plotting using %s model: %s; H amplitude: %s", model.name.lower(), coef, H_stop)
     try:
-        sol = solve(coef, H_stop=(H_min, H_max or 5e6))
+        sol = solve(model, coef, H_stop=H_stop)
     except SolverError as ex:
         plot_error(ex, coef, f"{type(ex).__name__}.{coef}{PLOT_FILE_SUFFIX}")
         raise
@@ -359,10 +346,52 @@ def run(
 def main() -> None:
     try:
         _setup_logging()
+        _logger.debug("jafit v%s", __version__)
         _cleanup()
         np.seterr(divide="raise", over="raise")
         unnamed, named = _parse_args(sys.argv[1:])
-        run(*unnamed, **named)  # type: ignore
+        if unnamed:
+            raise ValueError(f"Unexpected unnamed arguments: {unnamed}")
+
+        # Parse the model name.
+        model: Model | None = None
+        model_name = _param(named, "model", str, "").strip().upper()
+        if model_name:
+            for enum_item in Model:
+                if enum_item.name.upper().startswith(model_name):
+                    model = enum_item
+                    break
+        if model is None:
+            raise ValueError(
+                f"Model name not understood: {model_name!r}. Choose one: {', '.join(x.name.lower() for x in Model)}"
+            )
+
+        # Load the reference curve.
+        ref: HysteresisLoop | None = None
+        if ref_file_str := _param(named, "ref", str, ""):
+            ref = io.load(Path(ref_file_str))
+
+        # Load the coefficients.
+        coef = dict(
+            c_r=_param(named, "c_r", float),
+            M_s=_param(named, "M_s", float),
+            a=_param(named, "a", float),
+            k_p=_param(named, "k_p", float),
+            alpha=_param(named, "alpha", float),
+        )
+
+        assert isinstance(model, Model)
+        run(
+            model=model,
+            ref=ref,
+            cf=coef,
+            H_amp_min=_param(named, "H_amp_min", float),
+            H_amp_max=_param(named, "H_amp_max", float),
+            effort=_param(named, "effort", int, 10**7),
+            stage=_param(named, "stage", int, 0),
+            plot_failed=_param(named, "plot_failed", bool, False),
+            fast=_param(named, "fast", bool, False, last=True),
+        )
     except KeyboardInterrupt:
         _logger.info("Interrupted")
         _logger.debug("Interruption stack trace", exc_info=True)
@@ -374,6 +403,33 @@ def main() -> None:
     finally:
         # Wait for the background tasks (like plotting) to finish.
         BG_EXECUTOR.shutdown()
+
+
+ParamType = Callable[[int | float | str], T]
+_sentinel = object()
+
+
+@overload
+def _param(d: dict[str, int | float | str], name: str, ty: ParamType[T], *, last: bool = False) -> T | None: ...
+@overload
+def _param(d: dict[str, int | float | str], name: str, ty: ParamType[T], default: T, last: bool = False) -> T: ...
+def _param(
+    d: dict[str, int | float | str],
+    name: str,
+    ty: ParamType[T],
+    default: Any = _sentinel,
+    last: bool = False,
+) -> T | None:
+    try:
+        v = d.pop(name)
+    except KeyError:
+        if default is _sentinel:
+            return None
+        return default  # type: ignore
+    finally:
+        if last and d:
+            raise ValueError(f"Unexpected named arguments: {d}")
+    return ty(v)
 
 
 def _perhaps(x: T | None, default: T) -> T:

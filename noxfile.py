@@ -1,12 +1,14 @@
 # Copyright (C) 2025 Pavel Kirienko <pavel.kirienko@zubax.com>
 # type: ignore
 
+import shlex
 import shutil
 from pathlib import Path
 
 # noinspection PyPackageRequirements
 import nox
 
+ROOT = Path(__file__).parent.resolve()
 
 BYPRODUCTS = [
     "*.egg-info",
@@ -58,11 +60,25 @@ def test(session: nox.Session) -> None:
     session.install("coverage ~= 7.6")
 
     # Run the tool with coverage
-    common = ["effort=20", "plot_failed=1", "fast=1"]
-    session.run("coverage", "run", "-m", "jafit", "c_r=0.1", "M_s=1.6e6", "a=560", "k_p=1200", "alpha=0.0007", *common)
-    session.run("coverage", "run", "-m", "jafit", "data/B(H).AlNiCo_5.tab", *common)
-    session.run("coverage", "run", "-m", "jafit", "data/B(H).LNG37.ansys.tab", *common)
-    session.run("coverage", "run", "-m", "jafit", "data/Altair_Flux_HystereticExample.csv", *common)
+    def run(args: str) -> None:
+        work_dir = Path(session.create_tmp()) / f"integration.{abs(hash(args)):016x}"
+        work_dir.mkdir(parents=True)
+        with session.chdir(work_dir):
+            Path("args.txt").write_text(args)
+            session.run("coverage", "run", f"--rcfile={ROOT}/pyproject.toml", "-m", "jafit", *shlex.split(args))
+            for cf in Path().glob(".coverage*"):
+                shutil.move(cf, ROOT)
+
+    run("model=ve c_r=0.1       M_s=1.6e6       a=560           k_p=1200         alpha=0.0007")
+    run("model=po c_r=0.1       M_s=1.6e6       a=560           k_p=1200         alpha=0.0007")
+    run("model=sz c_r=0.1       M_s=1.6e6       a=560           k_p=1200         alpha=0.0007")
+    run("model=ve c_r=0.2107788 M_s=1306755.22  a=108.694943    k_p=177.625645   alpha=0.000294224757 H_amp_max=1111")
+    run("model=or c_r=0.885     M_s=1080000     a=1107718.3824  k_p=702271.17275 alpha=3.168")
+    run("model=po c_r=0.956886  M_s=2956870.912 a=025069.875361 k_p=019498.2     alpha=0.18122")
+
+    run(f"model=venk effort=20 plot_failed=1 fast=1 ref='{ROOT}/data/B(H).AlNiCo_5.tab'")
+    run(f"model=venk effort=20 plot_failed=1 fast=1 ref='{ROOT}/data/B(H).LNG37.ansys.tab'")
+    run(f"model=venk effort=20 plot_failed=1 fast=1 ref='{ROOT}/data/Altair_Flux_HystereticExample.csv'")
 
     # Run pytest with coverage
     session.install("pytest ~= 8.3")
