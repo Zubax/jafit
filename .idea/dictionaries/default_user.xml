@@ -23,8 +23,10 @@
       <w>multiphysics</w>
       <w>renormalize</w>
       <w>rtol</w>
+      <w>szewczyk</w>
       <w>unalgebraic</w>
       <w>unclamped</w>
+      <w>venk</w>
       <w>venkataraman</w>
       <w>xatol</w>
     </words>
