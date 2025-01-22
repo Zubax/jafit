@@ -69,6 +69,12 @@ Optionally, you can provide the initial guess for (some of) the coefficients: `c
 The optimization is done in multiple stages, with global search preceding local refinement.
 The tool can be instructed to skip N first stages by setting `stage=N`. See the code for details.
 
+The tool relies on a robust implicit solver to work around stiffness that arises with certain coefficient combinations
+during the optimization process. While ultra-high stiffness may be considered unphysical as it may indicate an
+unrealistically high magnetic susceptibility, being able to solve such cases is useful as it improves the smoothness
+of the optimization landscape, which in turn helps the optimizer converge faster and reduces the chances of
+getting stuck in local minima.
+
 ### Helpful tips
 
 For fetching the (approximate) data points from a third-party plot,
