@@ -66,6 +66,9 @@ In this case, it is recommended to specify `H_amp_min`/`H_amp_max` explicitly in
 
 Optionally, you can provide the initial guess for (some of) the coefficients: `c_r`, `M_s`, `a`, `k_p`, `alpha`.
 
+The optimization is done in multiple stages, with global search preceding local refinement.
+The tool can be instructed to skip N first stages by setting `stage=N`. See the code for details.
+
 ### Helpful tips
 
 For fetching the (approximate) data points from a third-party plot,

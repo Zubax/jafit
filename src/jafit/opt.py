@@ -78,7 +78,7 @@ def make_objective_function(
             _logger.warning("#%05d ❌ %6.3fs: %s %s", this_epoch, elapsed, c, error)
         else:
             _logger.info(
-                "#%05d %s %6.3fs: %s loss=%.6f t_loss=%.3f pts↓%d↑%d",
+                "#%05d %s %6.3fs: %s loss=%.9f t_loss=%.3f pts↓%d↑%d",
                 this_epoch,
                 "🔵💚"[is_best],
                 elapsed,
@@ -176,13 +176,23 @@ def fit_local(
         _logger.info("Gradient-based local optimization: x_0=%s, diff_eps=%s", x_0, diff_eps)
         # https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html; "tol" sets "ftol" but not "gtol"
         res = opt.minimize(
-            fun, v_0, bounds=bounds, callback=cb, tol=tol, options={"eps": diff_eps, "gtol": tol, "maxiter": maxiter}
+            fun,
+            v_0,
+            bounds=bounds,
+            callback=cb,
+            tol=tol,
+            options={"eps": diff_eps, "gtol": tol, "maxiter": maxiter},
         )
     else:
         _logger.info("Gradient-free local optimization: x_0=%s", x_0)
         # https://docs.scipy.org/doc/scipy/reference/optimize.minimize-neldermead.html; "tol" sets "fatol" and "xatol"
         res = opt.minimize(
-            fun, v_0, method="Nelder-Mead", bounds=bounds, callback=cb, tol=1e-8, options={"maxiter": maxiter}
+            fun,
+            v_0,
+            method="Nelder-Mead",
+            bounds=bounds,
+            callback=cb,
+            options={"maxiter": maxiter, "xatol": 1e-5, "fatol": 1e-5},
         )
 
     _logger.info("Local optimization result:\n%s", res)
