@@ -6,6 +6,7 @@ Jiles-Atherton solver.
 
 from __future__ import annotations
 from logging import getLogger
+import time
 import enum
 import dataclasses
 import numpy as np
@@ -61,6 +62,10 @@ class ConvergenceError(SolverError):
 
 
 class NumericalError(SolverError):
+    pass
+
+
+class StuckError(ConvergenceError):
     pass
 
 
@@ -341,15 +346,16 @@ def _make_solver(
     rtol: float,
     atol: float,
     max_step: float,
-    max_evaluations: int = 10**8,
+    timeout: float = 600.0,
 ) -> scipy.integrate.OdeSolver:
     """
     tolerance=rtol*M+atol; rtol dominates at strong magnetization, atol dominates at weak magnetization.
-    max_evaluations is intended to prevent the solver from getting stuck in an infinite loop, which sometimes happens.
+    The timeout is intended to prevent the solver from getting stuck in an infinite loop, which sometimes happens.
     """
     c_r, M_s, a, k_p, alpha = coef.c_r, coef.M_s, coef.a, coef.k_p, coef.alpha
     sign = int(np.sign(H_bound))
     eval_cnt = 0
+    deadline = time.monotonic() + timeout
 
     fun = {
         Model.ORIGINAL: _dM_dH_original,
@@ -360,9 +366,10 @@ def _make_solver(
 
     def rhs(x: float, y: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         nonlocal eval_cnt
-        if eval_cnt >= max_evaluations:
-            raise ConvergenceError(f"Exceeded max function evaluations ({max_evaluations}) at H={x} M={y[0]}")
+        if (eval_cnt % 10000 == 0) and (time.monotonic() > deadline):
+            raise StuckError(f"Timed out at eval #{eval_cnt} H={x} M={y[0]}")
         eval_cnt += 1
+
         z = fun(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha, H=x, M=float(y[0]), sign=sign)
         return np.array([z], dtype=np.float64)
 
