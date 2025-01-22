@@ -99,7 +99,10 @@ def do_fit(
     stage: int,
     plot_failed: bool,
     fast: bool,
-) -> Coef:
+) -> tuple[
+    Coef,
+    tuple[float, float] | float,
+]:
     if fast:
         _logger.warning("⚠ Fast mode is enabled; the solver may produce inaccurate results or fail to converge.")
 
@@ -237,7 +240,7 @@ def do_fit(
         if np.isclose(v, lo, rtol, atol) or np.isclose(v, hi, rtol, atol):
             _logger.warning("Final %s=%.9f is close to the bounds [%.9f, %.9f]", k, v, lo, hi)
 
-    return coef
+    return coef, H_stop
 
 
 def plot(
@@ -291,9 +294,10 @@ def run(
     plot_failed: bool,
     fast: bool,
 ) -> None:
+    H_stop: float | tuple[float, float]
     if ref is not None:
         _logger.info("Fitting %s using %s model with starting parameters: %s", ref, model.name.lower(), cf)
-        coef = do_fit(
+        coef, H_stop = do_fit(
             ref,
             model=model,
             **cf,
@@ -309,12 +313,14 @@ def run(
         if any(x is None for x in cf.values()):
             raise ValueError(f"Supplied coefficients are incomplete, and optimization is not requested: {cf}")
         coef = Coef(**cf)  # type: ignore
+        H_amp_min = H_amp_min or max(coef.k_p * 2, 100e3)  # In soft materials k_p≈H_ci
+        H_amp_max = H_amp_max or max(coef.M_s * 2, 1e6)
+        H_stop = H_amp_min, H_amp_max
 
     # Solve with the coefficients and plot the results.
-    _logger.info("Solving and plotting using %s model: %s", model.name.lower(), coef)
-    H_amp_min = H_amp_min or max(coef.k_p * 2, 100e3)  # For soft materials, k_p≈H_ci; this is a good guess for H_min.
+    _logger.info("Solving and plotting using %s model: %s; H amplitude: %s", model.name.lower(), coef, H_stop)
     try:
-        sol = solve(model, coef, H_stop=(H_amp_min, H_amp_max or 5e6))
+        sol = solve(model, coef, H_stop=H_stop)
     except SolverError as ex:
         plot_error(ex, coef, f"{type(ex).__name__}.{coef}{PLOT_FILE_SUFFIX}")
         raise

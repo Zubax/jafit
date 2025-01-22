@@ -341,7 +341,7 @@ def _make_solver(
     rtol: float,
     atol: float,
     max_step: float,
-    max_evaluations: int = 10**9,
+    max_evaluations: int = 10**8,
 ) -> scipy.integrate.OdeSolver:
     """
     tolerance=rtol*M+atol; rtol dominates at strong magnetization, atol dominates at weak magnetization.
