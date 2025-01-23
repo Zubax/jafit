@@ -45,7 +45,7 @@ so it may be a good idea to create a dedicated directory for this purpose.
 
 ```shell
 # Fit the example curve from Altair Flux:
-jafit model=venk ref="data/Altair_Flux_HystereticExample.csv"
+jafit model=venk ref="data/Altair_Flux_HystereticExample.csv" interpolate=300
 
 # Find coefficients for isotropic AlNiCo 5:
 jafit model=venk ref="data/B(H).AlNiCo_5.tab"
@@ -58,6 +58,12 @@ The reference curve may be either the entire hysteresis loop, or any part of it;
 e.g., only a part of the descending branch.
 If a full loop is provided, then that loop doesn't need to be the major loop;
 the tool will simply use the H amplitude seen in the reference loop for solving the JA equation.
+
+Option `interpolate=N`, where N is a positive integer, can be used to interpolate the reference curve
+with N equidistant sample points distributed along its length. Note that this is not the same as sampling the curve
+on a regular H-axis grid; the difference is that the used method ensures consistent Euclidean distances between
+the sample points. This is useful with irregularly sampled curves, but may cause adverse effects if the reference
+curves contain large gaps, as the interpolation error within the gaps may be large.
 
 If the reference curve is only a part of the hysteresis loop,
 then the tool will use simple heuristics to guess the reasonable H amplitude for solving the JA equation,
