@@ -350,7 +350,7 @@ def run(
 def main() -> None:
     try:
         _setup_logging()
-        _logger.debug("jafit v%s", __version__)
+        _logger.debug("jafit v%s invoked as:\n%s", __version__, " ".join(sys.argv))
         _cleanup()
         np.seterr(divide="raise", over="raise")
         unnamed, named = _parse_args(sys.argv[1:])
