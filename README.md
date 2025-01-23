@@ -51,6 +51,9 @@ jafit model=venk ref="data/Altair_Flux_HystereticExample.csv" interpolate=300
 jafit model=venk ref="data/B(H).AlNiCo_5.tab"
 ```
 
+Output symbol legend per function evaluation:
+💚 -- best match so far; ❌ -- no solution (convergence failure); 🔵 -- solution exists but is not the best.
+
 The input reference curve file must contain two columns: H \[A/m\] and B \[T\], either tab- or comma-separated.
 The first row may or may not be the header row.
 
@@ -64,6 +67,10 @@ with N equidistant sample points distributed along its length. Note that this is
 on a regular H-axis grid; the difference is that the used method ensures consistent Euclidean distances between
 the sample points. This is useful with irregularly sampled curves, but may cause adverse effects if the reference
 curves contain large gaps, as the interpolation error within the gaps may be large.
+
+If interpolation is not used (it is not by default), then the optimizer will naturally assign higher importance
+to the regions of the curve with higher density of sample points. This may be leveraged to great advantage
+if the reference curve is pre-processed to leave out the regions that are less important for the fitting.
 
 If the reference curve is only a part of the hysteresis loop,
 then the tool will use simple heuristics to guess the reasonable H amplitude for solving the JA equation,

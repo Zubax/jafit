@@ -81,20 +81,9 @@ def load(
     if len(m.shape) != 2 or m.shape[1] != 2 or m.shape[0] < 2:
         raise ValueError(f"Invalid data shape: {m.shape}")
 
-    # Remove repeated H values. This happens in some datasets.
-    m_original = m
-    _, m_unique_idx = np.unique(m[:, 0], return_index=True)  # m_unique_idx holds the first occurrence of each H value
-    m_unique_idx = np.sort(m_unique_idx)  # restore the original ordering
-    m = m[m_unique_idx]
-    if len(m) < len(m_original):
-        _logger.info(
-            "Removed %d points with the same H values: was %d points, now %d points",
-            len(m_original) - len(m),
-            len(m_original),
-            len(m),
-        )
-
     # Handle the easy case where the H-sign is not noisy: clean mag/demag curves separated by a diff sign change.
+    # This way we can unambiguously determine whether we have just one branch or both, even if they cover
+    # only a small fraction of the BH plane.
     d = np.diff(m[:, 0])
     d = np.concatenate(([d[0]], d))
     sign_changes_after_indices = d[1:] * d[:-1] < 0
@@ -109,7 +98,7 @@ def load(
             a, b = b, a
         return HysteresisLoop(descending=_finalize_branch(a, kind), ascending=_finalize_branch(b, kind))
 
-    # The harder case.
+    # The harder case where the data is noisy.
     _logger.debug("Multiple sign changes detected in the input curve; assuming the input data is sign-noisy")
     H_start = m[0, 0]
     H_end = m[-1, 0]
