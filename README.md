@@ -75,7 +75,14 @@ if the reference curve is pre-processed to leave out the regions that are less i
 If the reference curve is only a part of the hysteresis loop,
 then the tool will use simple heuristics to guess the reasonable H amplitude for solving the JA equation,
 assuming that the loop is the major loop (i.e., it reaches saturation).
-In this case, it is recommended to specify `H_amp_min`/`H_amp_max` explicitly instead of relying on heuristics.
+In this case, it is recommended to specify `H_amp_min` and/or `H_amp_max` explicitly instead of relying on heuristics.
+
+`H_amp_min` specifies the minimum H magnitude that must be reached before switching the H sweep direction,
+and `H_amp_max` is the maximum H magnitude that the solver is allowed to use; the solver will flip the H sweep
+direction somewhere between these two values as soon as the material reaches saturation ($\chi^\prime$ becomes small).
+
+If the loop is known to be the major loop, then it is occasionally useful to manually extend `H_amp_max` a little
+to ensure that the material reaches deep saturation, so that the optimizer converges to a good $M_s$ value faster.
 
 Optionally, you can provide the initial guess for (some of) the coefficients: `c_r`, `M_s`, `a`, `k_p`, `alpha`.
 
