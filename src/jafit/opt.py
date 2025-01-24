@@ -192,7 +192,7 @@ def fit_local(
             method="Nelder-Mead",
             bounds=bounds,
             callback=cb,
-            options={"maxiter": maxiter, "xatol": 1e-5, "fatol": 1e-5},
+            options={"maxiter": maxiter, "xatol": 1e-5, "fatol": 1e-4},
         )
 
     _logger.info("Local optimization result:\n%s", res)
