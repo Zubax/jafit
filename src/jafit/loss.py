@@ -65,13 +65,14 @@ def magnetization(ref: HysteresisLoop, sol: HysteresisLoop, *, lattice_size: int
 
 def nearest(ref: HysteresisLoop, sol: HysteresisLoop) -> float:
     """
-    Dissimilarity metric that computes the RMS distance between each point of the reference H(M) curves and the
+    Dissimilarity metric that computes the mean distance between each point of the reference H(M) curves and the
     nearest point on the solution H(M) curves. The computed loss values per loop branch are averaged.
 
-    For this function to work well, the points in the reference curve should be spaced more or less uniformly;
-    otherwise, the loss will be dominated by the regions with higher point density. One way to ensure this is to
-    perform spline interpolation using ``interpolate_spline_equidistant()`` before calling this function.
-    The number of sample points should usually be somewhere between 100..1000, depending on the complexity of the shape.
+    The points in the reference curve should be spaced more or less uniformly; otherwise, the loss will be
+    dominated by the regions with higher point density -- although, sometimes it is the desired behavior.
+    One way to ensure uniform sampling is to perform spline interpolation using ``interpolate_spline_equidistant()``
+    before calling this function. The number of sample points should usually be somewhere between 100..1000,
+    depending on the complexity of the shape.
 
     Normalization is not needed because both coordinates are in the same units [A/m];
     this is also the dimension of the computed loss value.
@@ -80,27 +81,27 @@ def nearest(ref: HysteresisLoop, sol: HysteresisLoop) -> float:
     """
     loss: list[np.float64] = []
     if len(ref.descending) and len(sol.descending):
-        loss.append(_rms_distance_points_to_polyline(ref.descending, sol.descending))
+        loss.append(_mean_distance_points_to_polyline(ref.descending, sol.descending))
     if len(ref.ascending) and len(sol.ascending):
-        loss.append(_rms_distance_points_to_polyline(ref.ascending, sol.ascending))
+        loss.append(_mean_distance_points_to_polyline(ref.ascending, sol.ascending))
     if not loss:
         raise ValueError("No same-side hysteresis branches to compare")
     return float(np.mean(loss))
 
 
 @njit(nogil=True)
-def _rms_distance_points_to_polyline(points: npt.NDArray[np.float64], polyline: npt.NDArray[np.float64]) -> np.float64:
+def _mean_distance_points_to_polyline(points: npt.NDArray[np.float64], polyline: npt.NDArray[np.float64]) -> np.float64:
     """
-    >>> fun = lambda r, s: float(_rms_distance_points_to_polyline(np.array(r), np.array(s)))
+    >>> fun = lambda r, s: float(_mean_distance_points_to_polyline(np.array(r), np.array(s)))
     >>> fun([(0,0),(1,1),(2,2)], [(0,0),(1,1),(2,2)])
     0.0
     >>> round(fun([(0,0),(1,1),(2,2)], [(0,0),(1,1),(3,1)]), 3)
-    0.577
+    0.333
     """
     assert len(points.shape) == 2 and points.shape[1] == 2
     assert len(polyline.shape) == 2 and polyline.shape[1] == 2
-    d = np.array([_squared_distance_point_to_polyline(q, polyline) for q in points], dtype=np.float64)
-    return np.sqrt(np.mean(d))  # type: ignore
+    d = np.array([np.sqrt(_squared_distance_point_to_polyline(q, polyline)) for q in points], dtype=np.float64)
+    return np.mean(d)  # type: ignore
 
 
 @njit(nogil=True)
