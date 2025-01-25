@@ -143,6 +143,14 @@ jafit model=venk H_amp_max=65e3 c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 
 <img src="validation/jafit-comsol-default-material.png" alt="" height="200px"><img src="validation/hysteresis-comsol-default-material.png" alt="" height="200px">
 
+#### Specimen B: LNGT72 approximation
+
+```shell
+jafit model=venk c_r=0.00000098783341818 M_s=0931849.980906066 a=025958.529588940 k_p=147381.227474120 alpha=0.17527880356890363 H_amp_min=1e6
+```
+
+<img src="validation/jafit hysteresis model=venk c_r=0.00000098783341818 M_s=0931849.980906066 a=025958.529588940 k_p=147381.227474120 alpha=0.17527880356890363.png" alt="" height="200px"><img src="validation/hysteresis model=venk c_r=0.00000098783341818 M_s=0931849.980906066 a=025958.529588940 k_p=147381.227474120 alpha=0.17527880356890363.png" alt="" height="200px">
+
 ### Against Altair Flux
 
 The following invocation results in a curve matching the example material from Altair Flux.
