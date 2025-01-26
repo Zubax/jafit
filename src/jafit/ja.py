@@ -75,7 +75,7 @@ class Coef:
     Per the original model definition, the parameters can be either scalars or 3x3 matrices:
 
         Symbol  Description                                                         Range           Unit
-        c_r     magnetization reversibility (1 for purely anhysteretic material)    (0, 1]          dimensionless
+        c_r     magnetization reversibility (1 for purely anhysteretic material)    (0, 1)          dimensionless
         M_s     saturation magnetization                                            non-negative    ampere/meter
         a       domain wall density                                                 non-negative    ampere/meter
         k_p     domain wall pinning loss                                            non-negative    ampere/meter
@@ -98,7 +98,7 @@ class Coef:
         def non_negative(x: float) -> bool:
             return x >= 0 and np.isfinite(x)
 
-        if not 0 < self.c_r <= 1:
+        if not 0 < self.c_r < 1:
             raise ValueError(f"c_r invalid: {self.c_r}")
         if not non_negative(self.M_s):
             raise ValueError(f"M_s invalid: {self.M_s}")

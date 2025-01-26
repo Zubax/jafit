@@ -161,13 +161,15 @@ def do_fit(
     )
     x_min = Coef(c_r=1e-12, M_s=M_s_min, a=1e-6, k_p=1e-6, alpha=1e-12)
     # TODO: We need a better way of setting the upper bound. The sensible limits also depend on the model used.
-    x_max = Coef(c_r=0.999999999, M_s=3e6, a=3e6, k_p=3e6, alpha=0.9)
+    x_max = Coef(c_r=0.999999999, M_s=3e6, a=3e6, k_p=3e6, alpha=10.0)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
 
     # Ensure that the saturation detection heuristic does not mistakenly terminate the sweep too early.
     # If we have a full hysteresis loop, simply limit the H-range to that; this speeds up optimization considerably
     # because we can quickly weed out materials that don't behave as expected in the specified loop. The provided
     # loop in this case doesn't need to be the major one, too!
+    if not H_amp_max:
+        _logger.warning("H_amp_max is not specified; using a heuristic")
     H_stop: tuple[float, float] | float
     if ref.is_full:
         # If we have the full loop, simply replicate its H-range. The loop may be a minor one.
