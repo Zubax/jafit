@@ -96,7 +96,7 @@ def do_fit(
     alpha: float | None,
     H_amp_max: float | None,
     interpolate_points: int | None,
-    max_evaluations_per_stage: int,
+    max_evaluations_per_stage: int | None,
     stage: int,
     plot_failed: bool,
     fast: bool,
@@ -198,7 +198,7 @@ def do_fit(
                 lambda c: solve(model, c, H_stop, fast=True),  # The initial exploration always uses the fast mode.
                 loss.demag_key_points,
                 stop_loss=0.01,  # Fine adjustment is meaningless the loss fun is crude here.
-                stop_evals=max_evaluations_per_stage,
+                stop_evals=max_evaluations_per_stage or 10**5,
                 callback=make_callback("0_initial", ref, plot_failed=plot_failed),
             ),
             tolerance=1e-3,
@@ -216,7 +216,7 @@ def do_fit(
                 ref_interpolated,
                 lambda c: solve(model, c, H_stop, fast=fast),
                 loss.nearest,
-                stop_evals=max_evaluations_per_stage,
+                stop_evals=max_evaluations_per_stage or 10**7,
                 callback=make_callback("1_global", ref_interpolated, plot_failed=plot_failed),
             ),
             tolerance=1e-7,
@@ -231,7 +231,7 @@ def do_fit(
             ref_interpolated,
             lambda c: solve(model, c, H_stop),  # Fine-tuning cannot use fast mode.
             loss.nearest,
-            stop_evals=max_evaluations_per_stage,
+            stop_evals=max_evaluations_per_stage or 10**5,
             callback=make_callback("2_local", ref_interpolated, plot_failed=plot_failed),
         ),
     )
@@ -294,7 +294,7 @@ def run(
     H_amp_min: float | None,
     H_amp_max: float | None,
     interpolate_points: int | None,
-    effort: int,
+    effort: int | None,
     stage: int,
     plot_failed: bool,
     fast: bool,
@@ -302,7 +302,7 @@ def run(
     H_stop: float | tuple[float, float]
     if ref is not None:
         _logger.info(
-            "Fitting %s using %s model with starting parameters: %s; effort=%d", ref, model.name.lower(), cf, effort
+            "Fitting %s using %s model with starting parameters: %s; effort=%s", ref, model.name.lower(), cf, effort
         )
         coef, H_stop = do_fit(
             ref,
@@ -394,7 +394,7 @@ def main() -> None:
             H_amp_min=_param(named, "H_amp_min", float),
             H_amp_max=_param(named, "H_amp_max", float),
             interpolate_points=_param(named, "interpolate", int),
-            effort=_param(named, "effort", int, 10**7),
+            effort=_param(named, "effort", int),
             stage=_param(named, "stage", int, 0),
             plot_failed=_param(named, "plot_failed", bool, False),
             fast=_param(named, "fast", bool, False, last=True),
