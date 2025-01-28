@@ -45,7 +45,7 @@ def make_objective_function(
     quiet: bool = False,
 ) -> ObjectiveFunction:
     """
-    WARNING: cb_on_best() may be invoked from a different thread concurrently!.
+    WARNING: the callback may be invoked from a different thread concurrently.
     """
     g_epoch = 0
     g_best_loss = np.inf
@@ -129,11 +129,11 @@ def fit_global(
             obj_fn_proxy,
             [(lo, hi) for lo, hi in zip(v_min, v_max)],
             x0=v_0,
-            mutation=(0.5, 1.0),
+            mutation=(0.5, 1.9),
             recombination=0.7,
-            popsize=15,
+            popsize=20,
             maxiter=10**6,
-            tol=tolerance or 0.01,
+            tol=tolerance or 0.005,
             callback=cb,
         )
     _logger.info("Global optimization result:\n%s", res)
