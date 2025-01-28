@@ -53,6 +53,7 @@ jafit model=venk ref="data/B(H).Jesenik.AlNiCo.tab"
 
 Output symbol legend per function evaluation:
 💚 -- best match so far; ❌ -- no solution (convergence failure); 🔵 -- solution exists but is not the best.
+Use `quiet=1` to reduce the verbosity.
 
 The input reference curve file must contain two columns: H \[A/m\] and B \[T\], either tab- or comma-separated.
 The first row may or may not be the header row.

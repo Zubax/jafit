@@ -42,6 +42,7 @@ def make_objective_function(
     decimate_solution_to: int = 10_000,
     stop_loss: float = -np.inf,
     stop_evals: int = 10**10,
+    quiet: bool = False,
 ) -> ObjectiveFunction:
     """
     WARNING: cb_on_best() may be invoked from a different thread concurrently!.
@@ -74,10 +75,11 @@ def make_objective_function(
         is_best = loss < g_best_loss
         g_best_loss = loss if is_best else g_best_loss
 
+        log_fn = _logger.info if not quiet or is_best else _logger.debug
         if error:
-            _logger.warning("#%05d ❌ %6.3fs: %s %s", this_epoch, elapsed, c, error)
+            log_fn("#%05d ❌ %6.3fs: %s %s", this_epoch, elapsed, c, error)
         else:
-            _logger.info(
+            log_fn(
                 "#%05d %s %6.3fs: %s loss=%.9f t_loss=%.3f pts↓%d↑%d",
                 this_epoch,
                 "🔵💚"[is_best],

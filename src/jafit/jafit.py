@@ -100,6 +100,7 @@ def do_fit(
     stage: int,
     plot_failed: bool,
     fast: bool,
+    quiet: bool,
 ) -> tuple[
     Coef,
     tuple[float, float] | float,
@@ -200,6 +201,7 @@ def do_fit(
                 stop_loss=0.01,  # Fine adjustment is meaningless the loss fun is crude here.
                 stop_evals=max_evaluations_per_stage or 10**5,
                 callback=make_callback("0_initial", ref, plot_failed=plot_failed),
+                quiet=quiet,
             ),
             tolerance=1e-3,
         )
@@ -218,6 +220,7 @@ def do_fit(
                 loss.nearest,
                 stop_evals=max_evaluations_per_stage or 10**7,
                 callback=make_callback("1_global", ref_interpolated, plot_failed=plot_failed),
+                quiet=quiet,
             ),
             tolerance=1e-7,
         )
@@ -233,6 +236,7 @@ def do_fit(
             loss.nearest,
             stop_evals=max_evaluations_per_stage or 10**5,
             callback=make_callback("2_local", ref_interpolated, plot_failed=plot_failed),
+            quiet=quiet,
         ),
     )
 
@@ -298,6 +302,7 @@ def run(
     stage: int,
     plot_failed: bool,
     fast: bool,
+    quiet: bool,
 ) -> None:
     H_stop: float | tuple[float, float]
     if ref is not None:
@@ -314,6 +319,7 @@ def run(
             stage=stage,
             plot_failed=plot_failed,
             fast=fast,
+            quiet=quiet,
         )
         # noinspection PyTypeChecker
         print(*(f"{k}={v}" for k, v in dataclasses.asdict(coef).items()))
@@ -397,7 +403,8 @@ def main() -> None:
             effort=_param(named, "effort", int),
             stage=_param(named, "stage", int, 0),
             plot_failed=_param(named, "plot_failed", bool, False),
-            fast=_param(named, "fast", bool, False, last=True),
+            fast=_param(named, "fast", bool, False),
+            quiet=_param(named, "quiet", bool, False, last=True),
         )
     except KeyboardInterrupt:
         _logger.info("Interrupted")
