@@ -45,10 +45,10 @@ so it may be a good idea to create a dedicated directory for this purpose.
 
 ```shell
 # Fit the example curve from Altair Flux:
-jafit model=venk ref="data/Altair_Flux_HystereticExample.csv" interpolate=300
+jafit model=venk ref="data/B(H).Altair_Flux.Example.csv" interpolate=300
 
 # Find coefficients for isotropic AlNiCo 5:
-jafit model=venk ref="data/B(H).AlNiCo_5.tab"
+jafit model=venk ref="data/B(H).Jesenik.AlNiCo.tab"
 ```
 
 Output symbol legend per function evaluation:
