@@ -42,7 +42,7 @@ def magnetization(ref: HysteresisLoop, sol: HysteresisLoop, *, lattice_size: int
     Both curves are interpolated using the PCHIP method (piecewise monotonic cubic non-overshooting).
     The computed loss values per loop branch are averaged.
 
-    Normalization is not needed because both coordinates are in the same units [A/m];
+    Normalization is not done because both coordinates are in the same units [A/m];
     this is also the dimension of the computed loss value.
     """
     H_range = max(ref.H_range[0], sol.H_range[0]), min(ref.H_range[1], sol.H_range[1])
@@ -74,16 +74,35 @@ def nearest(ref: HysteresisLoop, sol: HysteresisLoop) -> float:
     before calling this function. The number of sample points should usually be somewhere between 100..1000,
     depending on the complexity of the shape.
 
-    Normalization is not needed because both coordinates are in the same units [A/m];
-    this is also the dimension of the computed loss value.
+    The data on both axes is normalized such that the reference values are in the range [-1, +1],
+    and the solution values are scaled accordingly. The computed loss value is therefore also normalized.
+    The normalization is done to ensure that the optimizer assigns comparable importance to all dimensions.
 
     The computational complexity is high, not recommended for large datasets without prior downsampling.
     """
+
+    def absmax(m: npt.NDArray[np.float64], col: int) -> float:
+        return float(np.abs(m[:, col]).max(initial=0.0))
+
+    H_scale = max(absmax(ref.descending, 0), absmax(ref.ascending, 0), 1.0)
+    M_scale = max(absmax(ref.descending, 1), absmax(ref.ascending, 1), 1.0)
+
+    def scale(m: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        m = m.copy()
+        m[:, 0] /= H_scale
+        m[:, 1] /= M_scale
+        return m
+
+    rd = scale(ref.descending)
+    ra = scale(ref.ascending)
+    sd = scale(sol.descending)
+    sa = scale(sol.ascending)
+
     loss: list[np.float64] = []
-    if len(ref.descending) and len(sol.descending):
-        loss.append(_mean_distance_points_to_polyline(ref.descending, sol.descending))
-    if len(ref.ascending) and len(sol.ascending):
-        loss.append(_mean_distance_points_to_polyline(ref.ascending, sol.ascending))
+    if len(rd) and len(sd):
+        loss.append(_mean_distance_points_to_polyline(rd, sd))
+    if len(ra) and len(sa):
+        loss.append(_mean_distance_points_to_polyline(ra, sa))
     if not loss:
         raise ValueError("No same-side hysteresis branches to compare")
     return float(np.mean(loss))
