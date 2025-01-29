@@ -10,6 +10,7 @@ from __future__ import annotations
 import sys
 import time
 import dataclasses
+from itertools import cycle
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, TypeVar, Iterable, Any, overload
 import logging
@@ -261,13 +262,18 @@ def plot(
     subtitle: str | None = None,
 ) -> None:
     S, C = vis.Style, vis.Color
+    color = iter(cycle([C.gray, C.black, C.black, C.red, C.blue]))
     specs = [
-        ("J(H) JA virgin", hm_to_hj(sol.virgin), S.line, C.gray),
-        ("J(H) JA descending", hm_to_hj(sol.descending), S.line, C.black),
-        ("J(H) JA ascending", hm_to_hj(sol.ascending), S.line, C.blue),
+        (
+            f"J(H) JA branch #{idx}",
+            hm_to_hj(curve),
+            S.line,
+            next(color),
+        )
+        for idx, curve in enumerate(sol.branches)
     ]
     if ref:
-        specs.append(("J(H) reference descending", hm_to_hj(ref.descending), S.scatter, C.red))
+        specs.append(("J(H) reference descending", hm_to_hj(ref.descending), S.scatter, C.cyan))
         specs.append(("J(H) reference ascending", hm_to_hj(ref.ascending), S.scatter, C.magenta))
     title = str(coef)
     if subtitle:
@@ -342,11 +348,11 @@ def run(
     except SolverError as ex:
         plot_error(ex, coef, f"{type(ex).__name__}.{coef}{PLOT_FILE_SUFFIX}")
         raise
-    loop = HysteresisLoop(descending=sol.descending, ascending=sol.ascending)
+    loop = HysteresisLoop(descending=sol.last_descending[::-1], ascending=sol.last_ascending)
     _logger.debug("Solved loop: %s", loop)
 
     # Extract the key parameters from the descending loop.
-    H_c, B_r, BH_max = extract_H_c_B_r_BH_max(sol.descending)
+    H_c, B_r, BH_max = extract_H_c_B_r_BH_max(loop.descending)
     _logger.info("Predicted parameters: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", H_c, B_r, BH_max)
 
     # noinspection PyTypeChecker
