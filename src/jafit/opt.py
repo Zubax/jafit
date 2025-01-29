@@ -27,14 +27,10 @@ ObjectiveFunction = Callable[[Coef], ObjectiveFunctionResult]
 
 SolveFunction = Callable[[Coef], Solution]
 
-LossFunction = Callable[[HysteresisLoop, HysteresisLoop], float]
-"""
-The first is the reference, the second is the evaluated solution.
-"""
+LossFunction = Callable[[HysteresisLoop], float]
 
 
 def make_objective_function(
-    ref: HysteresisLoop,
     solve_fun: SolveFunction,
     loss_fun: LossFunction,
     *,
@@ -68,7 +64,7 @@ def make_objective_function(
             error = ""
             loss_started_at = time.monotonic()
             loop = HysteresisLoop(descending=sol.last_descending[::-1], ascending=sol.last_ascending)
-            loss = loss_fun(ref, loop.decimate(decimate_solution_to))
+            loss = loss_fun(loop.decimate(decimate_solution_to))
             elapsed_loss = time.monotonic() - loss_started_at
         elapsed = time.monotonic() - started_at
 

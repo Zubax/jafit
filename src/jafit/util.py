@@ -15,7 +15,9 @@ except ImportError:
     njit = jit
 
 
-def interpolate(at: npt.NDArray[np.float64], points_xy: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+def interpolate(
+    at: npt.NDArray[np.float64], points_xy: npt.NDArray[np.float64], extrapolate: bool = False
+) -> npt.NDArray[np.float64]:
     """
     Interpolates the given points at the specified locations using the PCHIP method
     (piecewise monotonic cubic non-overshooting).
@@ -24,7 +26,11 @@ def interpolate(at: npt.NDArray[np.float64], points_xy: npt.NDArray[np.float64])
     [0.0, 0.75, 1.0, 0.75, 0.0]
     """
     # noinspection PyUnresolvedReferences
-    return scipy.interpolate.PchipInterpolator(points_xy[:, 0], points_xy[:, 1])(at)  # type: ignore
+    return scipy.interpolate.PchipInterpolator(  # type: ignore
+        points_xy[:, 0],
+        points_xy[:, 1],
+        extrapolate=extrapolate,
+    )(at)
 
 
 def interpolate_spline_equidistant(

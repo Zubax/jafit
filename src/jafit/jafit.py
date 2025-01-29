@@ -198,9 +198,8 @@ def do_fit(
             x_min=x_min,
             x_max=x_max,
             obj_fn=make_objective_function(
-                ref,  # Here we're using the non-interpolated curve.
                 lambda c: solve(model, c, H_stop, fast=True),  # The initial exploration always uses the fast mode.
-                loss.demag_key_points,
+                loss.make_demag_key_points(ref),  # Here we're using the non-interpolated curve.
                 stop_loss=0.01,  # Fine adjustment is meaningless the loss fun is crude here.
                 stop_evals=max_evaluations_per_stage or 10**5,
                 callback=make_callback("0_initial", ref, plot_failed=plot_failed),
@@ -218,9 +217,8 @@ def do_fit(
             x_min=x_min,
             x_max=x_max,
             obj_fn=make_objective_function(
-                ref_interpolated,
                 lambda c: solve(model, c, H_stop, fast=fast),
-                loss.nearest,
+                loss.make_nearest(ref_interpolated),
                 stop_evals=max_evaluations_per_stage or 10**7,
                 callback=make_callback("1_global", ref_interpolated, plot_failed=plot_failed),
                 quiet=quiet,
@@ -234,9 +232,8 @@ def do_fit(
         x_min=x_min,
         x_max=x_max,
         obj_fn=make_objective_function(
-            ref_interpolated,
             lambda c: solve(model, c, H_stop),  # Fine-tuning cannot use fast mode.
-            loss.nearest,
+            loss.make_nearest(ref_interpolated),
             stop_evals=max_evaluations_per_stage or 10**5,
             callback=make_callback("2_local", ref_interpolated, plot_failed=plot_failed),
             quiet=quiet,
