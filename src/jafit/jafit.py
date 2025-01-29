@@ -94,6 +94,7 @@ def do_fit(
     a: float | None,
     k_p: float | None,
     alpha: float | None,
+    M_s_max: float | None,
     H_amp_max: float | None,
     interpolate_points: int | None,
     max_evaluations_per_stage: int | None,
@@ -153,6 +154,8 @@ def do_fit(
         ref_interpolated = ref
 
     # Initialize the coefficients and their bounds.
+    M_s_max = M_s_max or max(M_s_min * 1.6, 1.8e6)  # Heuristic
+    assert M_s_max is not None
     coef = Coef(
         c_r=_perhaps(c_r, 0.1),
         M_s=_perhaps(M_s, M_s_min * 1.001),  # Optimizers tend to be unstable if parameters are too close to the bounds
@@ -161,8 +164,7 @@ def do_fit(
         alpha=_perhaps(alpha, 0.001),
     )
     x_min = Coef(c_r=1e-12, M_s=M_s_min, a=1e-6, k_p=1e-6, alpha=1e-12)
-    # TODO: We need a better way of setting the upper bound. The sensible limits also depend on the model used.
-    x_max = Coef(c_r=0.999999999, M_s=3e6, a=3e6, k_p=3e6, alpha=10.0)
+    x_max = Coef(c_r=0.999999999, M_s=M_s_max, a=3e6, k_p=3e6, alpha=10.0)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
 
     # Ensure that the saturation detection heuristic does not mistakenly terminate the sweep too early.
@@ -295,6 +297,7 @@ def run(
     model: Model,
     ref: HysteresisLoop | None,
     cf: dict[str, float | None],
+    M_s_max: float | None,
     H_amp_min: float | None,
     H_amp_max: float | None,
     interpolate_points: int | None,
@@ -313,6 +316,7 @@ def run(
             ref,
             model=model,
             **cf,
+            M_s_max=M_s_max,
             H_amp_max=H_amp_max,
             interpolate_points=interpolate_points,
             max_evaluations_per_stage=effort,
@@ -397,6 +401,7 @@ def main() -> None:
             model=model,
             ref=ref,
             cf=coef,
+            M_s_max=_param(named, "M_s_max", float),
             H_amp_min=_param(named, "H_amp_min", float),
             H_amp_max=_param(named, "H_amp_max", float),
             interpolate_points=_param(named, "interpolate", int),
