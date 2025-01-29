@@ -270,7 +270,7 @@ def plot(
         for idx, curve in enumerate(sol.branches)
     ]
     if ref:
-        specs.append(("J(H) reference descending", hm_to_hj(ref.descending), S.scatter, C.cyan))
+        specs.append(("J(H) reference descending", hm_to_hj(ref.descending), S.scatter, C.orange))
         specs.append(("J(H) reference ascending", hm_to_hj(ref.ascending), S.scatter, C.magenta))
     title = str(coef)
     if subtitle:
