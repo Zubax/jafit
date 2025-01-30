@@ -155,7 +155,7 @@ def do_fit(
         ref_interpolated = ref
 
     # Initialize the coefficients and their bounds.
-    M_s_max = M_s_max or max(M_s_min * 1.6, 1.8e6)  # Heuristic
+    M_s_max = M_s_max or max(M_s_min * 1.5, 1.8e6)  # Heuristic
     assert M_s_max is not None
     coef = Coef(
         c_r=_perhaps(c_r, 0.1),
