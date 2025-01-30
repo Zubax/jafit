@@ -75,7 +75,7 @@ class Coef:
     Per the original model definition, the parameters can be either scalars or 3x3 matrices:
 
         Symbol  Description                                                         Range           Unit
-        c_r     magnetization reversibility (1 for purely anhysteretic material)    (0, 1]          dimensionless
+        c_r     magnetization reversibility (1 for purely anhysteretic material)    (0, 1)          dimensionless
         M_s     saturation magnetization                                            non-negative    ampere/meter
         a       domain wall density                                                 non-negative    ampere/meter
         k_p     domain wall pinning loss                                            non-negative    ampere/meter
@@ -98,7 +98,7 @@ class Coef:
         def non_negative(x: float) -> bool:
             return x >= 0 and np.isfinite(x)
 
-        if not 0 < self.c_r <= 1:
+        if not 0 < self.c_r < 1:
             raise ValueError(f"c_r invalid: {self.c_r}")
         if not non_negative(self.M_s):
             raise ValueError(f"M_s invalid: {self.M_s}")
@@ -125,12 +125,31 @@ class Coef:
 class Solution:
     """
     Each curve segment contains an nx2 matrix, where the columns are the applied field H and magnetization M.
-    All curve segments are ordered in the ascending order of the H-field.
+    All curve segments contain samples in the order of their appearance during sweeps.
+    Repeating the loop allows approaching a stable orbit; see R. Venkataraman's paper for the details.
     """
 
-    virgin: npt.NDArray[np.float64]
-    descending: npt.NDArray[np.float64]
-    ascending: npt.NDArray[np.float64]
+    branches: list[npt.NDArray[np.float64]]
+    """
+    Contains all loop branches in the order of their traversal.
+    """
+
+    @property
+    def virgin(self) -> npt.NDArray[np.float64]:
+        """The initial magnetization curve."""
+        return self.branches[0]
+
+    @property
+    def last_descending(self) -> npt.NDArray[np.float64]:
+        """The last descending branch. H-descending order."""
+        br = [x for x in self.branches if x[0, 0] > x[-1, 0]]
+        return br[-1]
+
+    @property
+    def last_ascending(self) -> npt.NDArray[np.float64]:
+        """The last ascending branch. H-ascending order."""
+        br = [x for x in self.branches if x[0, 0] < x[-1, 0]]
+        return br[-1]
 
 
 def solve(
@@ -197,23 +216,19 @@ def solve(
             _logger.debug("Terminating sweep: %s sign=%d H0=%+f M0=%+f", coef, sign, H0, M0)
             raise
 
-    hm_virgin = do_sweep(0, 0, +1)
+    H, M = 0, 0
+    hms: list[npt.NDArray[np.float64]] = []
+    for idx in range(5):  # virgin -> descending -> ascending -> ...
+        try:
+            sgn = +1 if (idx % 2) == 0 else -1
+            branch = do_sweep(H, M, sgn)
+        except SolverError as ex:
+            ex.partial_curves = hms + ex.partial_curves
+            raise ex
+        hms.append(branch)
+        H, M = branch[-1]
 
-    H_last, M_last = hm_virgin[-1]
-    try:
-        hm_dsc = do_sweep(H_last, M_last, -1)
-    except SolverError as ex:
-        ex.partial_curves = [hm_virgin] + ex.partial_curves
-        raise ex
-
-    H_last, M_last = hm_dsc[-1]
-    try:
-        hm_asc = do_sweep(H_last, M_last, +1)
-    except SolverError as ex:
-        ex.partial_curves = [hm_virgin, hm_dsc] + ex.partial_curves
-        raise ex
-
-    return Solution(virgin=hm_virgin, descending=hm_dsc[::-1], ascending=hm_asc)
+    return Solution(branches=hms)
 
 
 def _sweep(

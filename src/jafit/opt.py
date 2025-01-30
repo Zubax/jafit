@@ -27,14 +27,10 @@ ObjectiveFunction = Callable[[Coef], ObjectiveFunctionResult]
 
 SolveFunction = Callable[[Coef], Solution]
 
-LossFunction = Callable[[HysteresisLoop, HysteresisLoop], float]
-"""
-The first is the reference, the second is the evaluated solution.
-"""
+LossFunction = Callable[[HysteresisLoop], float]
 
 
 def make_objective_function(
-    ref: HysteresisLoop,
     solve_fun: SolveFunction,
     loss_fun: LossFunction,
     *,
@@ -42,9 +38,10 @@ def make_objective_function(
     decimate_solution_to: int = 10_000,
     stop_loss: float = -np.inf,
     stop_evals: int = 10**10,
+    quiet: bool = False,
 ) -> ObjectiveFunction:
     """
-    WARNING: cb_on_best() may be invoked from a different thread concurrently!.
+    WARNING: the callback may be invoked from a different thread concurrently.
     """
     g_epoch = 0
     g_best_loss = np.inf
@@ -66,27 +63,27 @@ def make_objective_function(
         else:
             error = ""
             loss_started_at = time.monotonic()
-            loop = HysteresisLoop(descending=sol.descending, ascending=sol.ascending)
-            loss = loss_fun(ref, loop.decimate(decimate_solution_to))
+            loop = HysteresisLoop(descending=sol.last_descending[::-1], ascending=sol.last_ascending)
+            loss = loss_fun(loop.decimate(decimate_solution_to))
             elapsed_loss = time.monotonic() - loss_started_at
         elapsed = time.monotonic() - started_at
 
         is_best = loss < g_best_loss
         g_best_loss = loss if is_best else g_best_loss
 
+        log_fn = _logger.info if not quiet or is_best else _logger.debug
         if error:
-            _logger.warning("#%05d ❌ %6.3fs: %s %s", this_epoch, elapsed, c, error)
+            log_fn("#%05d ❌ %6.3fs: %s %s", this_epoch, elapsed, c, error)
         else:
-            _logger.info(
-                "#%05d %s %6.3fs: %s loss=%.9f t_loss=%.3f pts↓%d↑%d",
+            log_fn(
+                "#%05d %s %6.3fs: %s loss=%.9f t_loss=%.3f pts=%s",
                 this_epoch,
                 "🔵💚"[is_best],
                 elapsed,
                 c,
                 loss,
                 elapsed_loss,
-                len(sol.descending) if sol else 0,
-                len(sol.ascending) if sol else 0,
+                "+".join(map(str, map(len, sol.branches))) if sol else "~",
             )
         if is_best and sol:
             callback(this_epoch, c, (sol, loss))
@@ -127,11 +124,11 @@ def fit_global(
             obj_fn_proxy,
             [(lo, hi) for lo, hi in zip(v_min, v_max)],
             x0=v_0,
-            mutation=(0.5, 1.0),
+            mutation=(0.5, 1.9),
             recombination=0.7,
-            popsize=15,
+            popsize=20,
             maxiter=10**6,
-            tol=tolerance or 0.01,
+            tol=tolerance or 0.005,
             callback=cb,
         )
     _logger.info("Global optimization result:\n%s", res)
@@ -192,7 +189,7 @@ def fit_local(
             method="Nelder-Mead",
             bounds=bounds,
             callback=cb,
-            options={"maxiter": maxiter, "xatol": 1e-5, "fatol": 1e-5},
+            options={"maxiter": maxiter, "xatol": 1e-5, "fatol": 1e-4},
         )
 
     _logger.info("Local optimization result:\n%s", res)

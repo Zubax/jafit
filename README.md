@@ -45,11 +45,15 @@ so it may be a good idea to create a dedicated directory for this purpose.
 
 ```shell
 # Fit the example curve from Altair Flux:
-jafit model=venk ref="data/Altair_Flux_HystereticExample.csv"
+jafit model=venk ref="data/B(H).Altair_Flux.Example.csv" interpolate=300
 
 # Find coefficients for isotropic AlNiCo 5:
-jafit model=venk ref="data/B(H).AlNiCo_5.tab"
+jafit model=venk ref="data/B(H).Jesenik.AlNiCo.tab"
 ```
+
+Output symbol legend per function evaluation:
+💚 -- best match so far; ❌ -- no solution (convergence failure); 🔵 -- solution exists but is not the best.
+Use `quiet=1` to reduce the verbosity.
 
 The input reference curve file must contain two columns: H \[A/m\] and B \[T\], either tab- or comma-separated.
 The first row may or may not be the header row.
@@ -59,10 +63,27 @@ e.g., only a part of the descending branch.
 If a full loop is provided, then that loop doesn't need to be the major loop;
 the tool will simply use the H amplitude seen in the reference loop for solving the JA equation.
 
+Option `interpolate=N`, where N is a positive integer, can be used to interpolate the reference curve
+with N equidistant sample points distributed along its length. Note that this is not the same as sampling the curve
+on a regular H-axis grid; the difference is that the used method ensures consistent Euclidean distances between
+the sample points. This is useful with irregularly sampled curves, but may cause adverse effects if the reference
+curves contain large gaps, as the interpolation error within the gaps may be large.
+
+If interpolation is not used (it is not by default), then the optimizer will naturally assign higher importance
+to the regions of the curve with higher density of sample points. This may be leveraged to great advantage
+if the reference curve is pre-processed to leave out the regions that are less important for the fitting.
+
 If the reference curve is only a part of the hysteresis loop,
 then the tool will use simple heuristics to guess the reasonable H amplitude for solving the JA equation,
 assuming that the loop is the major loop (i.e., it reaches saturation).
-In this case, it is recommended to specify `H_amp_min`/`H_amp_max` explicitly instead of relying on heuristics.
+In this case, it is recommended to specify `H_amp_min` and/or `H_amp_max` explicitly instead of relying on heuristics.
+
+`H_amp_min` specifies the minimum H magnitude that must be reached before switching the H sweep direction,
+and `H_amp_max` is the maximum H magnitude that the solver is allowed to use; the solver will flip the H sweep
+direction somewhere between these two values as soon as the material reaches saturation ($\chi^\prime$ becomes small).
+
+If the loop is known to be the major loop, then it is occasionally useful to manually extend `H_amp_max` a little
+to ensure that the material reaches deep saturation, so that the optimizer converges to a good $M_s$ value faster.
 
 Optionally, you can provide the initial guess for (some of) the coefficients: `c_r`, `M_s`, `a`, `k_p`, `alpha`.
 
@@ -122,6 +143,14 @@ jafit model=venk H_amp_max=65e3 c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 ```
 
 <img src="validation/jafit-comsol-default-material.png" alt="" height="200px"><img src="validation/hysteresis-comsol-default-material.png" alt="" height="200px">
+
+#### Specimen B: LNGT72 approximation
+
+```shell
+jafit model=venk c_r=0.00000098783341818 M_s=0931849.980906066 a=025958.529588940 k_p=147381.227474120 alpha=0.17527880356890363 H_amp_min=1e6
+```
+
+<img src="validation/jafit hysteresis model=venk c_r=0.00000098783341818 M_s=0931849.980906066 a=025958.529588940 k_p=147381.227474120 alpha=0.17527880356890363.png" alt="" height="200px"><img src="validation/hysteresis model=venk c_r=0.00000098783341818 M_s=0931849.980906066 a=025958.529588940 k_p=147381.227474120 alpha=0.17527880356890363.png" alt="" height="200px">
 
 ### Against Altair Flux
 

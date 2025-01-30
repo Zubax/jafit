@@ -5,7 +5,7 @@ on:
 
 jobs:
   nox:
-    timeout-minutes: 120
+    timeout-minutes: 180
     runs-on: ubuntu-latest
     if: >
       github.event_name == 'pull_request' ||

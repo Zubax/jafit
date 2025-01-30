@@ -10,6 +10,7 @@ from __future__ import annotations
 import sys
 import time
 import dataclasses
+from itertools import cycle
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, TypeVar, Iterable, Any, overload
 import logging
@@ -94,11 +95,14 @@ def do_fit(
     a: float | None,
     k_p: float | None,
     alpha: float | None,
+    M_s_max: float | None,
     H_amp_max: float | None,
-    max_evaluations_per_stage: int,
+    interpolate_points: int | None,
+    max_evaluations_per_stage: int | None,
     stage: int,
     plot_failed: bool,
     fast: bool,
+    quiet: bool,
 ) -> tuple[
     Coef,
     tuple[float, float] | float,
@@ -115,41 +119,44 @@ def do_fit(
 
     # Interpolate the reference curve such that the sample points are equally spaced to improve the
     # behavior of the nearest-point loss function. This is not needed for the other loss functions.
-    ref_original = ref
-    ref_interpolated = ref.interpolate_equidistant(300)
-    del ref
-
-    # Display the interpolation result for diagnostics and visibility.
-    interpolation_plot_specs = [
-        ("M(H) interpolated descending", ref_interpolated.descending, vis.Style.scatter, vis.Color.black),
-        ("M(H) interpolated ascending", ref_interpolated.ascending, vis.Style.scatter, vis.Color.blue),
-        ("M(H) original descending", ref_original.descending, vis.Style.scatter, vis.Color.red),
-        ("M(H) original ascending", ref_original.ascending, vis.Style.scatter, vis.Color.magenta),
-    ]
-    vis.plot(
-        interpolation_plot_specs,
-        "Reference curve interpolation with 1:1 aspect ratio",
-        f"reference_interpolation_square{PLOT_FILE_SUFFIX}",
-        axes_labels=("H [A/m]", "B [T]"),
-        square_aspect_ratio=True,  # Same aspect ratio is required to check that the points are equidistant.
-    )
-    vis.plot(
-        interpolation_plot_specs,
-        "Reference curve interpolation",
-        f"reference_interpolation{PLOT_FILE_SUFFIX}",
-        axes_labels=("H [A/m]", "B [T]"),
-    )
-
-    # Ensure the interpolation did not cause nontrivial distortion.
-    interp_H_c, interp_B_r, interp_BH_max = extract_H_c_B_r_BH_max(ref_interpolated.descending)
-    _logger.debug(
-        "After interpolation: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", interp_H_c, interp_B_r, interp_BH_max
-    )
-    assert np.isclose(interp_H_c, H_c, rtol=0.1, atol=1e-3), f"{interp_H_c} != {H_c}"
-    assert np.isclose(interp_B_r, B_r, rtol=0.1, atol=1e-3), f"{interp_B_r} != {B_r}"
-    assert np.isclose(interp_BH_max, BH_max, rtol=0.1, atol=1e-3), f"{interp_BH_max} != {BH_max}"
+    if interpolate_points:
+        if interpolate_points < 10:
+            raise ValueError(f"Interpolation point count is too low: {interpolate_points}")
+        ref_interpolated = ref.interpolate_equidistant(interpolate_points)
+        # Display the interpolation result for diagnostics and visibility.
+        interpolation_plot_specs = [
+            ("M(H) interpolated descending", ref_interpolated.descending, vis.Style.scatter, vis.Color.black),
+            ("M(H) interpolated ascending", ref_interpolated.ascending, vis.Style.scatter, vis.Color.blue),
+            ("M(H) original descending", ref.descending, vis.Style.scatter, vis.Color.red),
+            ("M(H) original ascending", ref.ascending, vis.Style.scatter, vis.Color.magenta),
+        ]
+        vis.plot(
+            interpolation_plot_specs,
+            "Reference curve interpolation with 1:1 aspect ratio",
+            f"reference_interpolation_square{PLOT_FILE_SUFFIX}",
+            axes_labels=("H [A/m]", "B [T]"),
+            square_aspect_ratio=True,  # Same aspect ratio is required to check that the points are equidistant.
+        )
+        vis.plot(
+            interpolation_plot_specs,
+            "Reference curve interpolation",
+            f"reference_interpolation{PLOT_FILE_SUFFIX}",
+            axes_labels=("H [A/m]", "B [T]"),
+        )
+        # Ensure the interpolation did not cause nontrivial distortion.
+        interp_H_c, interp_B_r, interp_BH_max = extract_H_c_B_r_BH_max(ref_interpolated.descending)
+        _logger.debug(
+            "After interpolation: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", interp_H_c, interp_B_r, interp_BH_max
+        )
+        assert np.isclose(interp_H_c, H_c, rtol=0.1, atol=1e-3), f"{interp_H_c} != {H_c}"
+        assert np.isclose(interp_B_r, B_r, rtol=0.1, atol=1e-3), f"{interp_B_r} != {B_r}"
+        assert np.isclose(interp_BH_max, BH_max, rtol=0.1, atol=1e-3), f"{interp_BH_max} != {BH_max}"
+    else:
+        ref_interpolated = ref
 
     # Initialize the coefficients and their bounds.
+    M_s_max = M_s_max or max(M_s_min * 1.5, 1.8e6)  # Heuristic
+    assert M_s_max is not None
     coef = Coef(
         c_r=_perhaps(c_r, 0.1),
         M_s=_perhaps(M_s, M_s_min * 1.001),  # Optimizers tend to be unstable if parameters are too close to the bounds
@@ -157,25 +164,26 @@ def do_fit(
         k_p=_perhaps(k_p, max(H_c, 1.0)),  # For soft materials, k_p≈H_ci. For others this is still a good guess.
         alpha=_perhaps(alpha, 0.001),
     )
-    x_min = Coef(c_r=1e-9, M_s=M_s_min, a=1e-6, k_p=1e-6, alpha=1e-12)
-    # TODO: We need a better way of setting the upper bound. The sensible limits also depend on the model used.
-    x_max = Coef(c_r=0.999999, M_s=3e6, a=3e6, k_p=3e6, alpha=0.9)
+    x_min = Coef(c_r=1e-12, M_s=M_s_min, a=1e-6, k_p=1e-6, alpha=1e-12)
+    x_max = Coef(c_r=0.999999999, M_s=M_s_max, a=3e6, k_p=3e6, alpha=10.0)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
 
     # Ensure that the saturation detection heuristic does not mistakenly terminate the sweep too early.
     # If we have a full hysteresis loop, simply limit the H-range to that; this speeds up optimization considerably
     # because we can quickly weed out materials that don't behave as expected in the specified loop. The provided
     # loop in this case doesn't need to be the major one, too!
+    if not H_amp_max:
+        _logger.warning("H_amp_max is not specified; using a heuristic")
     H_stop: tuple[float, float] | float
-    if ref_original.is_full:
+    if ref.is_full:
         # If we have the full loop, simply replicate its H-range. The loop may be a minor one.
-        H_stop = max(float(np.abs(ref_original.H_range).max()), H_amp_max or 0)
+        H_stop = max(float(np.abs(ref.H_range).max()), H_amp_max or 0)
     else:
         # If we only have a part of the loop, assume that part belongs to the major loop.
         # We have to employ heuristics to determine when to stop the sweep.
         H_stop = float(
             max(
-                np.abs(ref_original.H_range).max(),
+                np.abs(ref.H_range).max(),
                 H_c * 2,
                 M_s_min * 0.1,
             )
@@ -190,12 +198,12 @@ def do_fit(
             x_min=x_min,
             x_max=x_max,
             obj_fn=make_objective_function(
-                ref_original,  # Here we're using the non-interpolated curve.
-                lambda c: solve(model, c, H_stop, fast=fast),
-                loss.demag_key_points,
+                lambda c: solve(model, c, H_stop, fast=True),  # The initial exploration always uses the fast mode.
+                loss.make_demag_key_points(ref),  # Here we're using the non-interpolated curve.
                 stop_loss=0.01,  # Fine adjustment is meaningless the loss fun is crude here.
-                stop_evals=max_evaluations_per_stage,
-                callback=make_callback("0_initial", ref_original, plot_failed=plot_failed),
+                stop_evals=max_evaluations_per_stage or 10**5,
+                callback=make_callback("0_initial", ref, plot_failed=plot_failed),
+                quiet=quiet,
             ),
             tolerance=1e-3,
         )
@@ -209,11 +217,11 @@ def do_fit(
             x_min=x_min,
             x_max=x_max,
             obj_fn=make_objective_function(
-                ref_interpolated,
                 lambda c: solve(model, c, H_stop, fast=fast),
-                loss.nearest,
-                stop_evals=max_evaluations_per_stage,
+                loss.make_nearest(ref_interpolated),
+                stop_evals=max_evaluations_per_stage or 10**7,
                 callback=make_callback("1_global", ref_interpolated, plot_failed=plot_failed),
+                quiet=quiet,
             ),
             tolerance=1e-7,
         )
@@ -224,11 +232,11 @@ def do_fit(
         x_min=x_min,
         x_max=x_max,
         obj_fn=make_objective_function(
-            ref_interpolated,
-            lambda c: solve(model, c, H_stop),
-            loss.nearest,
-            stop_evals=max_evaluations_per_stage,
+            lambda c: solve(model, c, H_stop),  # Fine-tuning cannot use fast mode.
+            loss.make_nearest(ref_interpolated),
+            stop_evals=max_evaluations_per_stage or 10**5,
             callback=make_callback("2_local", ref_interpolated, plot_failed=plot_failed),
+            quiet=quiet,
         ),
     )
 
@@ -251,13 +259,18 @@ def plot(
     subtitle: str | None = None,
 ) -> None:
     S, C = vis.Style, vis.Color
+    color = iter(cycle([C.gray, C.black, C.black, C.red, C.blue]))
     specs = [
-        ("J(H) JA virgin", hm_to_hj(sol.virgin), S.line, C.gray),
-        ("J(H) JA descending", hm_to_hj(sol.descending), S.line, C.black),
-        ("J(H) JA ascending", hm_to_hj(sol.ascending), S.line, C.blue),
+        (
+            f"J(H) JA branch #{idx}",
+            hm_to_hj(curve),
+            S.line,
+            next(color),
+        )
+        for idx, curve in enumerate(sol.branches)
     ]
     if ref:
-        specs.append(("J(H) reference descending", hm_to_hj(ref.descending), S.scatter, C.red))
+        specs.append(("J(H) reference descending", hm_to_hj(ref.descending), S.scatter, C.orange))
         specs.append(("J(H) reference ascending", hm_to_hj(ref.ascending), S.scatter, C.magenta))
     title = str(coef)
     if subtitle:
@@ -287,27 +300,33 @@ def run(
     model: Model,
     ref: HysteresisLoop | None,
     cf: dict[str, float | None],
+    M_s_max: float | None,
     H_amp_min: float | None,
     H_amp_max: float | None,
-    effort: int,
+    interpolate_points: int | None,
+    effort: int | None,
     stage: int,
     plot_failed: bool,
     fast: bool,
+    quiet: bool,
 ) -> None:
     H_stop: float | tuple[float, float]
     if ref is not None:
         _logger.info(
-            "Fitting %s using %s model with starting parameters: %s; effort=%d", ref, model.name.lower(), cf, effort
+            "Fitting %s using %s model with starting parameters: %s; effort=%s", ref, model.name.lower(), cf, effort
         )
         coef, H_stop = do_fit(
             ref,
             model=model,
             **cf,
+            M_s_max=M_s_max,
             H_amp_max=H_amp_max,
+            interpolate_points=interpolate_points,
             max_evaluations_per_stage=effort,
             stage=stage,
             plot_failed=plot_failed,
             fast=fast,
+            quiet=quiet,
         )
         # noinspection PyTypeChecker
         print(*(f"{k}={v}" for k, v in dataclasses.asdict(coef).items()))
@@ -326,11 +345,11 @@ def run(
     except SolverError as ex:
         plot_error(ex, coef, f"{type(ex).__name__}.{coef}{PLOT_FILE_SUFFIX}")
         raise
-    loop = HysteresisLoop(descending=sol.descending, ascending=sol.ascending)
+    loop = HysteresisLoop(descending=sol.last_descending[::-1], ascending=sol.last_ascending)
     _logger.debug("Solved loop: %s", loop)
 
     # Extract the key parameters from the descending loop.
-    H_c, B_r, BH_max = extract_H_c_B_r_BH_max(sol.descending)
+    H_c, B_r, BH_max = extract_H_c_B_r_BH_max(loop.descending)
     _logger.info("Predicted parameters: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", H_c, B_r, BH_max)
 
     # noinspection PyTypeChecker
@@ -346,7 +365,7 @@ def run(
 def main() -> None:
     try:
         _setup_logging()
-        _logger.debug("jafit v%s", __version__)
+        _logger.debug("jafit v%s invoked as:\n%s", __version__, " ".join(sys.argv))
         _cleanup()
         np.seterr(divide="raise", over="raise")
         unnamed, named = _parse_args(sys.argv[1:])
@@ -385,12 +404,15 @@ def main() -> None:
             model=model,
             ref=ref,
             cf=coef,
+            M_s_max=_param(named, "M_s_max", float),
             H_amp_min=_param(named, "H_amp_min", float),
             H_amp_max=_param(named, "H_amp_max", float),
-            effort=_param(named, "effort", int, 10**7),
+            interpolate_points=_param(named, "interpolate", int),
+            effort=_param(named, "effort", int),
             stage=_param(named, "stage", int, 0),
             plot_failed=_param(named, "plot_failed", bool, False),
-            fast=_param(named, "fast", bool, False, last=True),
+            fast=_param(named, "fast", bool, False),
+            quiet=_param(named, "quiet", bool, False, last=True),
         )
     except KeyboardInterrupt:
         _logger.info("Interrupted")
