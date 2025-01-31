@@ -96,6 +96,18 @@ unrealistically high magnetic susceptibility, being able to solve such cases is 
 of the optimization landscape, which in turn helps the optimizer converge faster and reduces the chances of
 getting stuck in local minima.
 
+### Adjust the parameters interactively
+
+Use `interactive=1` to launch an interactive tool with web-GUI. This mode requires `dash` to be installed:
+
+```
+pip install dash
+```
+
+```
+jafit interactive=1 ref='data/B(H).Campbell.AlNiCo_5.tab' c_r=0.00083284 M_s=1251180 a=20838 k_p=69771 alpha=0.08
+```
+
 ### Helpful tips
 
 For fetching the (approximate) data points from a third-party plot,

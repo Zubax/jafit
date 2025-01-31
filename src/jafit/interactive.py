@@ -4,7 +4,7 @@ import time
 from logging import getLogger
 from typing import Any
 from .ja import Coef, solve, SolverError, Model
-from .mag import HysteresisLoop, hm_to_hb
+from .mag import HysteresisLoop, hm_to_hj
 from . import loss
 
 
@@ -279,17 +279,17 @@ def run(
         # Make the plot.
         fig = go.Figure()
         for idx, br in enumerate(branches):
-            hb = hm_to_hb(br)
+            hb = hm_to_hj(br)
             fig.add_trace(
                 go.Scattergl(x=hb[:, 0], y=hb[:, 1], mode="lines", name=f"J(H) JA #{idx}", line=dict(width=2))
             )
         if ref is not None:
             ref_params = dict(mode="markers", marker=dict(size=3))
             if len(ref.descending):
-                hb = hm_to_hb(ref.descending)
+                hb = hm_to_hj(ref.descending)
                 fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], name="J(H) reference descending", **ref_params))
             if len(ref.ascending):
-                hb = hm_to_hb(ref.ascending)
+                hb = hm_to_hj(ref.ascending)
                 fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], name="J(H) reference ascending", **ref_params))
         fig.update_layout(title="J(H)", xaxis_title="H [A/m]", yaxis_title="B [T]", height=1000)
 
@@ -299,10 +299,10 @@ def run(
             f"H_amp_min={H_amp[0]} H_amp_max={H_amp[1]}"
         )
         if exception:
-            msg_style["color"] = "#500"
+            msg_style["color"] = "#800"
             msg = f"{type(exception).__name__}: {exception}"
         else:
-            msg_style["color"] = "#050"
+            msg_style["color"] = "#080"
             msg = f"Solved in {time.monotonic() - started_at:.3f} s"
         if losses:
             msg += "\nLosses:"

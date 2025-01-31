@@ -113,10 +113,10 @@ class Coef:
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"c_r={self.c_r:.17f}, "
-            f"M_s={self.M_s:017.9f}, "
-            f"a={self.a:016.9f}, "
-            f"k_p={self.k_p:016.9f}, "
+            f"c_r={self.c_r:.17f} "
+            f"M_s={self.M_s:017.9f} "
+            f"a={self.a:016.9f} "
+            f"k_p={self.k_p:016.9f} "
             f"alpha={self.alpha:.17f})"
         )
 
