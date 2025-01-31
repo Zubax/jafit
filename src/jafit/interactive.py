@@ -5,6 +5,7 @@ from logging import getLogger
 from typing import Any
 from .ja import Coef, solve, SolverError, Model
 from .mag import HysteresisLoop, hm_to_hb
+from . import loss
 
 
 def run(
@@ -21,7 +22,7 @@ def run(
     from dash.dependencies import Input, Output, State
     import plotly.graph_objects as go
 
-    app = dash.Dash(__name__)
+    app = dash.Dash(__name__, title="Jiles-Atherton interactive solver")
     font_family = "'Ubuntu Mono', 'Consolas', monospace"
     app.layout = html.Div(
         style={
@@ -33,13 +34,14 @@ def run(
             "fontFamily": font_family,
         },
         children=[
-            # LEFT PANEL (fixed width = 400px)
+            # SIDE PANEL
             html.Div(
                 style={
-                    "width": "400px",
+                    "width": "300px",
                     "padding": "10px",
                     "boxSizing": "border-box",
                     "overflowY": "auto",  # scroll if content exceeds
+                    "font-size": "12px",
                 },
                 children=[
                     html.Div([html.H3("JA coefficients")]),
@@ -112,20 +114,23 @@ def run(
                                             id="input-alpha",
                                             type="number",
                                             value=initial_coef.alpha,
-                                            min=0,
-                                            max=10,
+                                            min=1e-12,
+                                            max=100,
                                         )
                                     ),
                                 ]
                             ),
-                        ]
+                        ],
+                    ),
+                    html.Button(
+                        "Evaluate ⟳", id="submit-button", type="submit", n_clicks=0, style={"font-family": font_family}
                     ),
                     html.Div([html.H3("Solver parameters")]),
                     html.Table(
                         [
                             html.Tr(
                                 [
-                                    html.Td("H amplitude min"),
+                                    html.Td("|H| min"),
                                     html.Td(
                                         dcc.Input(
                                             id="input-H_amp_min",
@@ -140,7 +145,7 @@ def run(
                             ),
                             html.Tr(
                                 [
-                                    html.Td("H amplitude max"),
+                                    html.Td("|H| max"),
                                     html.Td(
                                         dcc.Input(
                                             id="input-H_amp_max",
@@ -155,8 +160,6 @@ def run(
                             ),
                         ]
                     ),
-                    html.Div([html.H3("Controls")]),
-                    html.Button("Evaluate ⟳", id="submit-button", n_clicks=0, style={"font-family": font_family}),
                     html.Div([html.H3("Invocation arguments")]),
                     html.Div(
                         id="command-text",
@@ -177,7 +180,7 @@ def run(
                     ),
                 ],
             ),
-            # Main area
+            # MAIN AREA
             html.Div(
                 style={
                     "flex": "1",  # fill remaining horizontal space
@@ -209,7 +212,14 @@ def run(
             Output("message", "children"),
             Output("message", "style"),
         ],
-        Input("submit-button", "n_clicks"),
+        [
+            Input("submit-button", "n_clicks"),
+            Input("input-c_r", "n_submit"),
+            Input("input-M_s", "n_submit"),
+            Input("input-a", "n_submit"),
+            Input("input-k_p", "n_submit"),
+            Input("input-alpha", "n_submit"),
+        ],
         [
             State("message", "style"),
             State("input-c_r", "value"),
@@ -223,7 +233,12 @@ def run(
         prevent_initial_call=False,
     )
     def update(
-        n_clicks: int,
+        _btn_clicks: int,
+        _c_r_submit: int,
+        _M_s_submit: int,
+        _a_submit: int,
+        _k_p_submit: int,
+        _alpha_submit: int,
         msg_style: dict[str, Any],
         c_r: float,
         M_s: float,
@@ -232,39 +247,50 @@ def run(
         alpha: float,
         H_amp_min: float,
         H_amp_max: float,
-    ) -> None:
-        _ = n_clicks
+    ) -> Any:
         started_at = time.monotonic()
         H_amp = (min(H_amp_min, H_amp_max), H_amp_max)
         _logger.info("Recomputing: c_r=%f, M_s=%f, a=%f, k_p=%f, α=%f, H_amp=%s", c_r, M_s, a, k_p, alpha, H_amp)
 
         # Solve the system.
+        sol: HysteresisLoop | None = None
         exception: Exception | None = None
         try:
-            sol = solve(
+            solution = solve(
                 model=model,
                 coef=Coef(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha),
                 H_stop=H_amp,
                 fast=True,
             )
-            branches = sol.branches
+            branches = solution.branches
+            sol = HysteresisLoop(descending=solution.last_descending[::-1], ascending=solution.last_ascending)
         except SolverError as ex:
             exception, branches = ex, ex.partial_curves
         except Exception as ex:
             exception, branches = ex, []
 
+        # Compute losses
+        losses: dict[str, float] = {}
+        if ref is not None and sol is not None:
+            losses["nearest"] = loss.make_nearest(ref)(sol)
+            losses["key_points"] = loss.make_demag_key_points(ref)(sol)
+            losses["magnetization"] = loss.make_magnetization(ref)(sol)
+
         # Make the plot.
         fig = go.Figure()
         for idx, br in enumerate(branches):
             hb = hm_to_hb(br)
-            fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], mode="lines", name=f"J(H) JA #{idx}"))
+            fig.add_trace(
+                go.Scattergl(x=hb[:, 0], y=hb[:, 1], mode="lines", name=f"J(H) JA #{idx}", line=dict(width=2))
+            )
         if ref is not None:
+            ref_params = dict(mode="markers", marker=dict(size=3))
             if len(ref.descending):
                 hb = hm_to_hb(ref.descending)
-                fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], mode="markers", name="J(H) reference descending"))
+                fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], name="J(H) reference descending", **ref_params))
             if len(ref.ascending):
                 hb = hm_to_hb(ref.ascending)
-                fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], mode="markers", name="J(H) reference ascending"))
+                fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], name="J(H) reference ascending", **ref_params))
         fig.update_layout(title="J(H)", xaxis_title="H [A/m]", yaxis_title="B [T]", height=1000)
 
         # Generate output messages.
@@ -273,11 +299,16 @@ def run(
             f"H_amp_min={H_amp[0]} H_amp_max={H_amp[1]}"
         )
         if exception:
+            msg_style["color"] = "#500"
             msg = f"{type(exception).__name__}: {exception}"
-            msg_style["color"] = "red"
         else:
-            msg = f"Computed successfully in {time.monotonic() - started_at:.3f} s"
-            msg_style["color"] = "green"
+            msg_style["color"] = "#050"
+            msg = f"Solved in {time.monotonic() - started_at:.3f} s"
+        if losses:
+            msg += "\nLosses:"
+            for k, v in losses.items():
+                k = k.ljust(max(map(len, losses.keys())))
+                msg += f"\n{k}= {v}"
 
         _logger.info("Recomputing done in %.3f s", time.monotonic() - started_at)
         # noinspection PyTypeChecker

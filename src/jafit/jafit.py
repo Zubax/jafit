@@ -406,12 +406,11 @@ def main() -> None:
                 k_p=coef["k_p"] or 100e3,
                 alpha=coef["alpha"] or 0.1,
             )
-            interactive.run(
-                ref,
-                model,
-                initial_coef,
-                (H_amp_min or initial_coef.k_p * 2, H_amp_max or 1e6),
-            )
+            if H_amp_min is None:
+                H_amp_min = max(np.abs(ref.H_range)) if ref is not None else initial_coef.k_p * 2
+            if H_amp_max is None:
+                H_amp_max = max(np.abs(ref.H_range)) if ref is not None else initial_coef.M_s
+            interactive.run(ref, model, initial_coef, (H_amp_min, H_amp_max))
             return
 
         if model is None:
