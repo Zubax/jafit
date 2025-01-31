@@ -19,7 +19,7 @@ import numpy as np
 from .ja import Solution, Coef, solve, SolverError, Model
 from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, mu_0, hm_to_hj
 from .opt import fit_global, fit_local, make_objective_function
-from . import loss, io, vis, __version__
+from . import loss, io, vis, interactive, __version__
 
 
 PLOT_FILE_SUFFIX = ".jafit.png"
@@ -380,10 +380,6 @@ def main() -> None:
                 if enum_item.name.upper().startswith(model_name):
                     model = enum_item
                     break
-        if model is None:
-            raise ValueError(
-                f"Model name not understood: {model_name!r}. Choose one: {', '.join(x.name.lower() for x in Model)}"
-            )
 
         # Load the reference curve.
         ref: HysteresisLoop | None = None
@@ -399,14 +395,37 @@ def main() -> None:
             alpha=_param(named, "alpha", float),
         )
 
+        H_amp_min = _param(named, "H_amp_min", float)
+        H_amp_max = _param(named, "H_amp_max", float)
+        if _param(named, "interactive", bool, False):
+            model = model or Model.VENKATARAMAN
+            initial_coef = Coef(
+                c_r=coef["c_r"] or 0.1,
+                M_s=coef["M_s"] or 1e6,
+                a=coef["a"] or 100e3,
+                k_p=coef["k_p"] or 100e3,
+                alpha=coef["alpha"] or 0.1,
+            )
+            interactive.run(
+                ref,
+                model,
+                initial_coef,
+                (H_amp_min or initial_coef.k_p * 2, H_amp_max or 1e6),
+            )
+            return
+
+        if model is None:
+            raise ValueError(
+                f"Model name not understood: {model_name!r}. Choose one: {', '.join(x.name.lower() for x in Model)}"
+            )
         assert isinstance(model, Model)
         run(
             model=model,
             ref=ref,
             cf=coef,
             M_s_max=_param(named, "M_s_max", float),
-            H_amp_min=_param(named, "H_amp_min", float),
-            H_amp_max=_param(named, "H_amp_max", float),
+            H_amp_min=H_amp_min,
+            H_amp_max=H_amp_max,
             interpolate_points=_param(named, "interpolate", int),
             effort=_param(named, "effort", int),
             stage=_param(named, "stage", int, 0),
