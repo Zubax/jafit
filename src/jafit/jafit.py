@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 import numpy as np
 from .ja import Solution, Coef, solve, SolverError, Model
-from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, mu_0, hm_to_hj
+from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, hm_to_hj
 from .opt import fit_global, fit_local, make_objective_function
 from . import loss, io, vis, interactive, __version__
 
@@ -114,8 +114,6 @@ def do_fit(
         raise ValueError("The reference descending curve is empty")
     H_c, B_r, BH_max = extract_H_c_B_r_BH_max(ref.descending)
     _logger.info("Given: %s; derived parameters: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", ref, H_c, B_r, BH_max)
-    M_s_min = B_r / mu_0  # Heuristic: B=mu_0*(H+M); H=0; B=mu_0*M; hence, M_s>=B_r/mu_0
-    _logger.info("Derived minimum M_s: %.6f A/m", M_s_min)
 
     # Interpolate the reference curve such that the sample points are equally spaced to improve the
     # behavior of the nearest-point loss function. This is not needed for the other loss functions.
@@ -155,11 +153,23 @@ def do_fit(
         ref_interpolated = ref
 
     # Initialize the coefficients and their bounds.
-    M_s_max = M_s_max or max(M_s_min * 1.5, 1.8e6)  # Heuristic
+    M_s_min = float(  # Saturation magnetization cannot be less than the values seen in the reference curve.
+        max(
+            np.abs(ref.descending[:, 1]).max(),
+            np.abs(ref.ascending[:, 1]).max(),
+        )
+    )
+    M_s_max = float(  # Maximum cannot be less than the minimum. If they are equal, assume M_s is known precisely.
+        max(
+            M_s_min,
+            M_s_max if M_s_max is not None else max(M_s_min * 1.5, 1.8e6),
+        )
+    )
+    _logger.info("Using M_s_min=%f M_s_max=%f", M_s_min, M_s_max)
     assert M_s_max is not None
     coef = Coef(
         c_r=_perhaps(c_r, 0.1),
-        M_s=_perhaps(M_s, M_s_min * 1.001),  # Optimizers tend to be unstable if parameters are too close to the bounds
+        M_s=_perhaps(M_s, (M_s_min + M_s_max) * 0.5),
         a=_perhaps(a, 1e3),
         k_p=_perhaps(k_p, max(H_c, 1.0)),  # For soft materials, k_p≈H_ci. For others this is still a good guess.
         alpha=_perhaps(alpha, 0.001),

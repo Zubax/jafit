@@ -85,6 +85,15 @@ direction somewhere between these two values as soon as the material reaches sat
 If the loop is known to be the major loop, then it is occasionally useful to manually extend `H_amp_max` a little
 to ensure that the material reaches deep saturation, so that the optimizer converges to a good $M_s$ value faster.
 
+By default, the tool will assume that the loop may not push the material into saturation,
+and thus it will attempt to determine $M_s$ as part of the optimization problem.
+This may fail in difficult cases.
+To aid the tool, you may need to set the maximum $M_s$ value manually using `M_s_max`.
+If the specified `M_s_max` is not greater than the maximum magnetization value seen in the reference curve,
+then the tool will simply use the maximum magnetization seen in the dataset as the true $M_s$,
+and remove the corresponding dimension from the optimization problem.
+This, **if the reference loop is the major loop (i.e., reaches saturation), set `M_s_max=0`**.
+
 Optionally, you can provide the initial guess for (some of) the coefficients: `c_r`, `M_s`, `a`, `k_p`, `alpha`.
 
 The optimization is done in multiple stages, with global search preceding local refinement.
@@ -105,7 +114,7 @@ pip install dash
 ```
 
 ```
-jafit interactive=1 ref='data/B(H).Campbell.AlNiCo_5.tab' c_r=0.00083284 M_s=1251180 a=20838 k_p=69771 alpha=0.08
+jafit interactive=1 model=venk ref='data/B(H).Campbell.AlNiCo_5.tab' c_r=0.00083284 M_s=1251180 a=20838 k_p=69771 alpha=0.08
 ```
 
 ### Helpful tips
