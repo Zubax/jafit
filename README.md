@@ -39,7 +39,8 @@ the resulting hysteresis loop will be a minor loop.
 
 ### Find JA coefficients for a given reference B(H) curve
 
-The fitting problem may take multiple hours to solve, depending on the curve shape and the performance of your computer.
+The fitting problem may take multiple hours or days to solve,
+depending on the curve shape and the performance of your computer.
 Intermediate results and logs will be stored in the current working directory,
 so it may be a good idea to create a dedicated directory for this purpose.
 
@@ -57,11 +58,28 @@ Use `quiet=1` to reduce the verbosity.
 
 The input reference curve file must contain two columns: H \[A/m\] and B \[T\], either tab- or comma-separated.
 The first row may or may not be the header row.
+The reference curve may be either the entire hysteresis loop, whether major or minor,
+or only a part of the descending branch.
 
-The reference curve may be either the entire hysteresis loop, or any part of it;
-e.g., only a part of the descending branch.
-If a full loop is provided, then that loop doesn't need to be the major loop;
-the tool will simply use the H amplitude seen in the reference loop for solving the JA equation.
+By default, the tool will attempt to determine the suitable range of the H amplitude values using heuristics.
+It is always a good idea to specify this manually instead by setting `H_amp_min` and/or `H_amp_max`,
+where `H_amp_min` specifies the minimum H magnitude that must be reached before switching the H sweep direction,
+and `H_amp_max` is the maximum H magnitude that the solver is allowed to use; the solver will flip the H sweep
+direction somewhere between these two values as soon as the material reaches saturation ($\chi^\prime$ becomes small).
+
+`H_amp_max` is clamped to be at least as large as `H_amp_min`;  therefore, setting `H_amp_max=0`
+will effectively force the tool to use a fixed H amplitude, irrespective of the saturation detection.
+If the provided loop is a minor loop, the tool needs to be instructed to limit the H amplitude to what is seen
+in the reference dataset; to do that, simply pass `H_amp_max=0`.
+
+By default, the tool will assume that the reference loop may not push the material into saturation,
+and thus it will attempt to determine $M_s$ as part of the optimization problem.
+If a good guess of the maximum $M_s$ is available, you may want to set it manually using `M_s_max`.
+If the specified `M_s_max` is not greater than the maximum magnetization value seen in the reference curve,
+then the tool will simply use the maximum magnetization seen in the dataset as the true $M_s$,
+and remove the corresponding dimension from the optimization problem.
+
+Optionally, you can provide the initial guess for (some of) the coefficients: `c_r`, `M_s`, `a`, `k_p`, `alpha`.
 
 Option `interpolate=N`, where N is a positive integer, can be used to interpolate the reference curve
 with N equidistant sample points distributed along its length. Note that this is not the same as sampling the curve
@@ -72,29 +90,6 @@ curves contain large gaps, as the interpolation error within the gaps may be lar
 If interpolation is not used (it is not by default), then the optimizer will naturally assign higher importance
 to the regions of the curve with higher density of sample points. This may be leveraged to great advantage
 if the reference curve is pre-processed to leave out the regions that are less important for the fitting.
-
-If the reference curve is only a part of the hysteresis loop,
-then the tool will use simple heuristics to guess the reasonable H amplitude for solving the JA equation,
-assuming that the loop is the major loop (i.e., it reaches saturation).
-In this case, it is recommended to specify `H_amp_min` and/or `H_amp_max` explicitly instead of relying on heuristics.
-
-`H_amp_min` specifies the minimum H magnitude that must be reached before switching the H sweep direction,
-and `H_amp_max` is the maximum H magnitude that the solver is allowed to use; the solver will flip the H sweep
-direction somewhere between these two values as soon as the material reaches saturation ($\chi^\prime$ becomes small).
-
-If the loop is known to be the major loop, then it is occasionally useful to manually extend `H_amp_max` a little
-to ensure that the material reaches deep saturation, so that the optimizer converges to a good $M_s$ value faster.
-
-By default, the tool will assume that the loop may not push the material into saturation,
-and thus it will attempt to determine $M_s$ as part of the optimization problem.
-This may fail in difficult cases.
-To aid the tool, you may need to set the maximum $M_s$ value manually using `M_s_max`.
-If the specified `M_s_max` is not greater than the maximum magnetization value seen in the reference curve,
-then the tool will simply use the maximum magnetization seen in the dataset as the true $M_s$,
-and remove the corresponding dimension from the optimization problem.
-This, **if the reference loop is the major loop (i.e., reaches saturation), set `M_s_max=0`**.
-
-Optionally, you can provide the initial guess for (some of) the coefficients: `c_r`, `M_s`, `a`, `k_p`, `alpha`.
 
 The optimization is done in multiple stages, with global search preceding local refinement.
 The tool can be instructed to skip N first stages by setting `stage=N`. See the code for details.

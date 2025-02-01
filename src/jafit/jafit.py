@@ -96,6 +96,7 @@ def do_fit(
     k_p: float | None,
     alpha: float | None,
     M_s_max: float | None,
+    H_amp_min: float | None,
     H_amp_max: float | None,
     interpolate_points: int | None,
     max_evaluations_per_stage: int | None,
@@ -103,10 +104,7 @@ def do_fit(
     plot_failed: bool,
     fast: bool,
     quiet: bool,
-) -> tuple[
-    Coef,
-    tuple[float, float] | float,
-]:
+) -> tuple[Coef, tuple[float, float]]:
     if fast:
         _logger.warning("⚠ Fast mode is enabled; the solver may produce inaccurate results or fail to converge.")
 
@@ -178,27 +176,21 @@ def do_fit(
     x_max = Coef(c_r=0.999999999, M_s=M_s_max, a=3e6, k_p=3e6, alpha=10.0)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
 
-    # Ensure that the saturation detection heuristic does not mistakenly terminate the sweep too early.
-    # If we have a full hysteresis loop, simply limit the H-range to that; this speeds up optimization considerably
-    # because we can quickly weed out materials that don't behave as expected in the specified loop. The provided
-    # loop in this case doesn't need to be the major one, too!
-    if not H_amp_max:
-        _logger.warning("H_amp_max is not specified; using a heuristic")
-    H_stop: tuple[float, float] | float
-    if ref.is_full:
-        # If we have the full loop, simply replicate its H-range. The loop may be a minor one.
-        H_stop = max(float(np.abs(ref.H_range).max()), H_amp_max or 0)
-    else:
-        # If we only have a part of the loop, assume that part belongs to the major loop.
-        # We have to employ heuristics to determine when to stop the sweep.
-        H_stop = float(
-            max(
-                np.abs(ref.H_range).max(),
-                H_c * 2,
-                M_s_min * 0.1,
-            )
-        ), float(H_amp_max or max(100e3, M_s_min * 2, H_c * 4))
+    # Determine the H amplitude range.
+    if H_amp_min is None:
+        # By default, simply use the peak value from the reference dataset.
+        # This enables simple treatment of minor loops, where we just set H_amp_max=0, and then
+        # H_amp_min=H_amp_max=max(abs(H_ref)), thus we repeat the excitation from the reference dataset.
+        # Using anything more clever here would make this simple case more complex and we don't want that.
+        H_amp_min = float(np.abs(ref.H_range).max())  # Like in the reference dataset.
+    if H_amp_max is None:
+        # We need to ensure that we can push the material into saturation while not wasting too much time
+        # trying to solve nonsaturable materials with very low permeability.
+        H_amp_max = max(100e3, M_s_max, H_c * 4)  # Being clever.
+    H_amp_max = max(H_amp_max, H_amp_min)
+    H_stop = H_amp_min, H_amp_max
     _logger.info("H amplitude range: %s [A/m]", H_stop)
+    assert H_stop[0] <= H_stop[1]
 
     # Run the optimizer.
     if (H_c > 100 and B_r > 0.1) and stage < 1:
@@ -251,7 +243,7 @@ def do_fit(
     )
 
     # Emit a warning if the final coefficients are close to the bounds.
-    rtol, atol = 1e-6, 1e-9
+    rtol, atol = 0.01, 1e-6
     # noinspection PyTypeChecker
     for k, v in dataclasses.asdict(coef).items():
         lo, hi = x_min.__getattribute__(k), x_max.__getattribute__(k)
@@ -330,6 +322,7 @@ def run(
             model=model,
             **cf,
             M_s_max=M_s_max,
+            H_amp_min=H_amp_min,
             H_amp_max=H_amp_max,
             interpolate_points=interpolate_points,
             max_evaluations_per_stage=effort,
@@ -344,7 +337,7 @@ def run(
         if any(x is None for x in cf.values()):
             raise ValueError(f"Supplied coefficients are incomplete, and optimization is not requested: {cf}")
         coef = Coef(**cf)  # type: ignore
-        H_amp_min = H_amp_min or max(coef.k_p * 2, 100e3)  # In soft materials k_p≈H_ci
+        H_amp_min = H_amp_min or max(coef.k_p * 2, 10e3)  # In soft materials k_p≈H_ci
         H_amp_max = H_amp_max or max(coef.M_s * 2, 1e6)
         H_stop = H_amp_min, H_amp_max
 

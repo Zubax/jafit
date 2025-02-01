@@ -118,9 +118,9 @@ def fit_global(
 
     _logger.info(
         "Global optimization: x_0=%s, x_min=%s, x_max=%s",
-        conv(x_0),
-        conv(x_min),
-        conv(x_max),
+        conv(x_0).tolist(),
+        conv(x_min).tolist(),
+        conv(x_max).tolist(),
     )
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
