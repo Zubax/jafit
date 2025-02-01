@@ -4,13 +4,20 @@ import time
 from logging import getLogger
 from typing import Any
 from .ja import Coef, solve, SolverError, Model
-from .mag import HysteresisLoop, hm_to_hj
+from .mag import HysteresisLoop, hm_to_hj, hm_to_hb
 from . import loss
+
+
+_PLOT_MODES = {
+    "J(H)": (hm_to_hj, "J [T]"),
+    "B(H)": (hm_to_hb, "B [T]"),
+    "M(H)": (lambda x: x, "M [A/m]"),
+}
 
 
 def run(
     ref: HysteresisLoop | None,
-    model: Model,
+    initial_model: Model,
     initial_coef: Coef,
     initial_H_amp: tuple[float, float],
 ) -> None:
@@ -44,7 +51,7 @@ def run(
                     "font-size": "12px",
                 },
                 children=[
-                    html.Div([html.H3("JA coefficients")]),
+                    html.Div([html.H3("Jiles-Atherton parameters")]),
                     html.Table(
                         [
                             html.Tr(
@@ -120,12 +127,28 @@ def run(
                                     ),
                                 ]
                             ),
+                            html.Tr(
+                                [
+                                    html.Td("Model"),
+                                    html.Td(
+                                        dcc.RadioItems(
+                                            id="ja-model",
+                                            options=[{"label": k.name.lower(), "value": k.name} for k in Model],
+                                            value=initial_model.name,
+                                        ),
+                                    ),
+                                ]
+                            ),
                         ],
                     ),
                     html.Button(
-                        "Evaluate ⟳", id="submit-button", type="submit", n_clicks=0, style={"font-family": font_family}
+                        "Solve ⟳",
+                        id="solve-button",
+                        type="submit",
+                        n_clicks=0,
+                        style={"font-family": font_family, "width": "100%"},
                     ),
-                    html.Div([html.H3("Solver parameters")]),
+                    html.Div([html.H3("Solver and plot parameters")]),
                     html.Table(
                         [
                             html.Tr(
@@ -158,9 +181,38 @@ def run(
                                     html.Td("A/m"),
                                 ]
                             ),
+                            html.Tr(
+                                [
+                                    html.Td("Plot"),
+                                    html.Td(
+                                        dcc.RadioItems(
+                                            id="plot-mode",
+                                            options=[{"label": k, "value": k} for k in _PLOT_MODES],
+                                            value=list(_PLOT_MODES)[0],
+                                            labelStyle={"display": "inline-block", "margin-right": "0px"},
+                                        ),
+                                    ),
+                                ]
+                            ),
+                            html.Tr(
+                                [
+                                    html.Td("Quality"),
+                                    html.Td(
+                                        dcc.RadioItems(
+                                            id="quality",
+                                            options=[
+                                                {"label": "Fast", "value": 0},
+                                                {"label": "Precise", "value": 1},
+                                            ],
+                                            value=0,
+                                            labelStyle={"display": "inline-block", "margin-right": "0px"},
+                                        ),
+                                    ),
+                                ]
+                            ),
                         ]
                     ),
-                    html.Div([html.H3("Invocation arguments")]),
+                    html.Div([html.H3("Command line")]),
                     html.Div(
                         id="command-text",
                         style={
@@ -213,7 +265,7 @@ def run(
             Output("message", "style"),
         ],
         [
-            Input("submit-button", "n_clicks"),
+            Input("solve-button", "n_clicks"),
             Input("input-c_r", "n_submit"),
             Input("input-M_s", "n_submit"),
             Input("input-a", "n_submit"),
@@ -227,8 +279,11 @@ def run(
             State("input-a", "value"),
             State("input-k_p", "value"),
             State("input-alpha", "value"),
+            State("ja-model", "value"),
             State("input-H_amp_min", "value"),
             State("input-H_amp_max", "value"),
+            State("plot-mode", "value"),
+            State("quality", "value"),
         ],
         prevent_initial_call=False,
     )
@@ -245,12 +300,18 @@ def run(
         a: float,
         k_p: float,
         alpha: float,
+        ja_model_name: str,
         H_amp_min: float,
         H_amp_max: float,
+        plot_mode_name: str,
+        quality: int,
     ) -> Any:
         started_at = time.monotonic()
         H_amp = (min(H_amp_min, H_amp_max), H_amp_max)
-        _logger.info("Recomputing: c_r=%f, M_s=%f, a=%f, k_p=%f, α=%f, H_amp=%s", c_r, M_s, a, k_p, alpha, H_amp)
+        hm_to_plot, y_label = _PLOT_MODES[plot_mode_name]
+        model = Model[ja_model_name.upper().strip()]
+        assert isinstance(model, Model)
+        _logger.info("Solving: c_r=%f, M_s=%f, a=%f, k_p=%f, α=%f, H_amp=%s", c_r, M_s, a, k_p, alpha, H_amp)
 
         # Solve the system.
         sol: HysteresisLoop | None = None
@@ -260,7 +321,7 @@ def run(
                 model=model,
                 coef=Coef(c_r=c_r, M_s=M_s, a=a, k_p=k_p, alpha=alpha),
                 H_stop=H_amp,
-                fast=True,
+                fast=quality < 1,
             )
             branches = solution.branches
             sol = HysteresisLoop(descending=solution.last_descending[::-1], ascending=solution.last_ascending)
@@ -279,24 +340,30 @@ def run(
         # Make the plot.
         fig = go.Figure()
         for idx, br in enumerate(branches):
-            hb = hm_to_hj(br)
+            hb = hm_to_plot(br)
             fig.add_trace(
                 go.Scattergl(x=hb[:, 0], y=hb[:, 1], mode="lines", name=f"J(H) JA #{idx}", line=dict(width=2))
             )
         if ref is not None:
             ref_params = dict(mode="markers", marker=dict(size=3))
             if len(ref.descending):
-                hb = hm_to_hj(ref.descending)
+                hb = hm_to_plot(ref.descending)
                 fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], name="J(H) reference descending", **ref_params))
             if len(ref.ascending):
-                hb = hm_to_hj(ref.ascending)
+                hb = hm_to_plot(ref.ascending)
                 fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], name="J(H) reference ascending", **ref_params))
-        fig.update_layout(title="J(H)", xaxis_title="H [A/m]", yaxis_title="B [T]", height=1000)
+        fig.update_layout(
+            xaxis_title="H [A/m]",
+            yaxis_title=y_label,
+            height=1000,
+            margin=dict(l=20, r=20, t=20, b=20),
+        )
 
         # Generate output messages.
         command_text = (
-            f"model={model.name.lower()} c_r={c_r} M_s={M_s} a={a} k_p={k_p} alpha={alpha} "
-            f"H_amp_min={H_amp[0]} H_amp_max={H_amp[1]}"
+            f"jafit model={model.name.lower()}"
+            f" c_r={c_r} M_s={M_s} a={a} k_p={k_p} alpha={alpha}"
+            f" H_amp_min={H_amp[0]} H_amp_max={H_amp[1]}"
         )
         if exception:
             msg_style["color"] = "#800"
@@ -310,7 +377,7 @@ def run(
                 k = k.ljust(max(map(len, losses.keys())))
                 msg += f"\n{k}= {v}"
 
-        _logger.info("Recomputing done in %.3f s", time.monotonic() - started_at)
+        _logger.info("Solved in %.3f s", time.monotonic() - started_at)
         # noinspection PyTypeChecker
         return fig, command_text, msg, msg_style
 
