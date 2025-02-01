@@ -404,7 +404,7 @@ def main() -> None:
             model = model or Model.VENKATARAMAN
             initial_coef = Coef(
                 c_r=coef["c_r"] or 0.1,
-                M_s=coef["M_s"] or 1e6,
+                M_s=coef["M_s"] or 1.5e6,
                 a=coef["a"] or 100e3,
                 k_p=coef["k_p"] or 100e3,
                 alpha=coef["alpha"] or 0.1,
@@ -412,7 +412,7 @@ def main() -> None:
             if H_amp_min is None:
                 H_amp_min = max(np.abs(ref.H_range)) if ref is not None else initial_coef.k_p * 2
             if H_amp_max is None:
-                H_amp_max = max(np.abs(ref.H_range)) if ref is not None else initial_coef.M_s
+                H_amp_max = max(1e6, initial_coef.M_s, initial_coef.k_p * 4)  # k_p≈H_ci for soft materials
             interactive.run(ref, model, initial_coef, (H_amp_min, H_amp_max))
             return
 
