@@ -7,7 +7,7 @@ Optimization utilities.
 import time
 import warnings
 import dataclasses
-from typing import Callable
+from typing import Callable, overload
 from logging import getLogger
 import numpy as np
 import numpy.typing as npt
@@ -100,14 +100,13 @@ def fit_global(
     *,
     tolerance: float | None = None,
 ) -> Coef:
-    # noinspection PyTypeChecker
-    v_0, v_min, v_max = (np.array(dataclasses.astuple(j)) for j in (x_0, x_min, x_max))
+    conv = CoefVecConverter(x_min, x_max)
     is_done = False
 
     def obj_fn_proxy(x: npt.NDArray[np.float64]) -> float:
         nonlocal is_done
-        x = np.minimum(np.maximum(x, v_min), v_max)  # Some optimizers may violate the bounds
-        ofr = obj_fn(Coef(*map(float, x)))
+        x = np.minimum(np.maximum(x, conv(x_min)), conv(x_max))  # Some optimizers violate the bounds
+        ofr = obj_fn(conv(x))
         if ofr.done:
             is_done = True
         return ofr.loss
@@ -117,13 +116,18 @@ def fit_global(
         if is_done:
             raise StopIteration
 
-    _logger.info("Global optimization: x_0=%s, x_min=%s, x_max=%s", x_0, x_min, x_max)
+    _logger.info(
+        "Global optimization: x_0=%s, x_min=%s, x_max=%s",
+        conv(x_0),
+        conv(x_min),
+        conv(x_max),
+    )
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         res = opt.differential_evolution(
             obj_fn_proxy,
-            [(lo, hi) for lo, hi in zip(v_min, v_max)],
-            x0=v_0,
+            [(lo, hi) for lo, hi in zip(conv(x_min), conv(x_max))],
+            x0=conv(x_0),
             mutation=(0.5, 1.9),
             recombination=0.7,
             popsize=20,
@@ -146,14 +150,13 @@ def fit_local(
     *,
     use_gradient: bool = False,
 ) -> Coef:
-    # noinspection PyTypeChecker
-    v_0, v_min, v_max = (np.array(dataclasses.astuple(j)) for j in (x_0, x_min, x_max))
+    conv = CoefVecConverter(x_min, x_max)
     is_done = False
 
     def fun(x: npt.NDArray[np.float64]) -> float:
         nonlocal is_done
         assert np.isfinite(x).all(), x
-        ofr = obj_fn(Coef(*map(float, x)))
+        ofr = obj_fn(conv(x))
         is_done = ofr.done
         return ofr.loss if np.isfinite(ofr.loss) else 1e100
 
@@ -163,18 +166,18 @@ def fit_local(
             raise StopIteration
 
     maxiter = 10**5
-    bounds = [(lo, hi) for lo, hi in zip(v_min, v_max)]
+    bounds = [(lo, hi) for lo, hi in zip(conv(x_min), conv(x_max))]
 
     if use_gradient:
         # The default finite differences step size used by L-BFGS-B is too small for this problem.
         # Since this is the final local optimization, we do not expect the arguments to stray far from x_0.
-        diff_eps = np.maximum(np.abs(v_0) * 1e-6, 1e-9)
+        diff_eps = np.maximum(np.abs(conv(x_0)) * 1e-6, 1e-9)
         tol = 1e-12  # With the default tolerance, the optimizer tends to stop prematurely.
         _logger.info("Gradient-based local optimization: x_0=%s, diff_eps=%s", x_0, diff_eps)
         # https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html; "tol" sets "ftol" but not "gtol"
         res = opt.minimize(
             fun,
-            v_0,
+            conv(x_0),
             bounds=bounds,
             callback=cb,
             tol=tol,
@@ -185,7 +188,7 @@ def fit_local(
         # https://docs.scipy.org/doc/scipy/reference/optimize.minimize-neldermead.html; "tol" sets "fatol" and "xatol"
         res = opt.minimize(
             fun,
-            v_0,
+            conv(x_0),
             method="Nelder-Mead",
             bounds=bounds,
             callback=cb,
@@ -196,6 +199,42 @@ def fit_local(
     if res.success or (is_done and np.all(np.isfinite(res.x))):
         return Coef(*map(float, res.x))
     raise RuntimeError(f"Local optimization failed: {res.message}")
+
+
+class CoefVecConverter:
+    """
+    Converts between Coef and a vector.
+    If min/max are the same for a dimension, it is omitted from the vector, thus reducing the optimization space.
+    """
+
+    def __init__(self, /, lo: Coef, hi: Coef) -> None:
+        self._lo = lo
+        self._hi = hi
+        self._fixed_M_s = np.isclose(lo.M_s, hi.M_s)
+
+    def coef2vec(self, /, c: Coef) -> npt.NDArray[np.float64]:
+        if self._fixed_M_s:
+            return np.array([c.c_r, c.a, c.k_p, c.alpha])
+        return np.array([c.c_r, c.M_s, c.a, c.k_p, c.alpha])
+
+    def vec2coef(self, /, vec: npt.NDArray[np.float64]) -> Coef:
+        v = [float(x) for x in vec]
+        if self._fixed_M_s:
+            assert len(v) == 4
+            return Coef(c_r=v[0], M_s=(self._lo.M_s + self._hi.M_s) * 0.5, a=v[1], k_p=v[2], alpha=v[3])
+        assert len(v) == 5
+        return Coef(c_r=v[0], M_s=v[1], a=v[2], k_p=v[3], alpha=v[4])
+
+    @overload
+    def __call__(self, /, x: Coef) -> npt.NDArray[np.float64]: ...
+    @overload
+    def __call__(self, /, x: npt.NDArray[np.float64]) -> Coef: ...
+    def __call__(self, /, x: Coef | npt.NDArray[np.float64]) -> Coef | npt.NDArray[np.float64]:
+        if isinstance(x, Coef):
+            return self.coef2vec(x)
+        if isinstance(x, np.ndarray):
+            return self.vec2coef(x)
+        raise TypeError(x)
 
 
 _logger = getLogger(__name__)
