@@ -14,8 +14,10 @@ Supports several JA model definitions.
 ```shell
 git clone https://github.com/Zubax/jafit
 cd jafit
-pip install .
+pip install ".[interactive]"
 ```
+
+You may omit `[interactive]` if you are not planning on using the GUI.
 
 The tool works on GNU/Linux and Windows. Probably also on macOS, but YMMV.
 
@@ -103,7 +105,8 @@ getting stuck in local minima.
 ### Adjust the parameters interactively
 
 Use `interactive=1` to launch an interactive tool with web GUI.
-This mode requires `dash` to be installed: `pip install dash`
+This mode requires that the interactive GUI option is enabled when installing the package;
+refer to the installation section for details.
 
 ```
 jafit interactive=1 model=venk ref='data/B(H).Campbell.AlNiCo_5.tab' c_r=0.00083284 M_s=1251180 a=20838 k_p=69771 alpha=0.08

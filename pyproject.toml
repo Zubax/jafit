@@ -17,6 +17,11 @@ dependencies = [
     "numba",  # For JIT compilation, not functionally significant
 ]
 
+[project.optional-dependencies]
+interactive = [
+    "dash ~= 2.18",
+]
+
 [project.scripts]
 jafit = "jafit.jafit:main"
 
