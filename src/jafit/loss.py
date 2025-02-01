@@ -156,7 +156,7 @@ def _distance_point_to_polyline(point: npt.NDArray[np.float64], polyline: npt.ND
     ...     fun((2,2), [(-1,1),(1,1),(1,1),(2,2)])
     0.0
     """
-    return np.sqrt(_squared_distance_point_to_polyline(point, polyline))
+    return np.sqrt(_squared_distance_point_to_polyline(point, polyline))  # type: ignore
 
 
 @njit(nogil=True)

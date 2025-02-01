@@ -160,7 +160,7 @@ def do_fit(
     M_s_max = float(  # Maximum cannot be less than the minimum. If they are equal, assume M_s is known precisely.
         max(
             M_s_min,
-            M_s_max if M_s_max is not None else max(M_s_min * 1.5, 1.8e6),
+            M_s_max if M_s_max is not None else max(M_s_min * 1.6, 2e6),
         )
     )
     _logger.info("Using M_s_min=%f M_s_max=%f", M_s_min, M_s_max)
@@ -186,7 +186,7 @@ def do_fit(
     if H_amp_max is None:
         # We need to ensure that we can push the material into saturation while not wasting too much time
         # trying to solve nonsaturable materials with very low permeability.
-        H_amp_max = max(100e3, M_s_max, H_c * 4)  # Being clever.
+        H_amp_max = max(100e3, M_s_max * 2, H_c * 5)  # Being clever.
     H_amp_max = max(H_amp_max, H_amp_min)
     H_stop = H_amp_min, H_amp_max
     _logger.info("H amplitude range: %s [A/m]", H_stop)
@@ -412,7 +412,7 @@ def main() -> None:
             if H_amp_min is None:
                 H_amp_min = max(np.abs(ref.H_range)) if ref is not None else initial_coef.k_p * 2
             if H_amp_max is None:
-                H_amp_max = max(1e6, initial_coef.M_s, initial_coef.k_p * 4)  # k_p≈H_ci for soft materials
+                H_amp_max = max(1e6, initial_coef.M_s * 2, initial_coef.k_p * 5)  # k_p≈H_ci for soft materials
             interactive.run(ref, model, initial_coef, (H_amp_min, H_amp_max))
             return
 

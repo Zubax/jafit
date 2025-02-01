@@ -28,4 +28,5 @@ jobs:
       with:
         name: outputs
         path: .
+        include-hidden-files: true
         compression-level: 9
