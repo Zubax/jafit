@@ -107,15 +107,14 @@ getting stuck in local minima.
 
 ### Adjust the parameters interactively
 
-Use `interactive=1` to launch an interactive tool with web-GUI. This mode requires `dash` to be installed:
-
-```
-pip install dash
-```
+Use `interactive=1` to launch an interactive tool with web GUI.
+This mode requires `dash` to be installed: `pip install dash`
 
 ```
 jafit interactive=1 model=venk ref='data/B(H).Campbell.AlNiCo_5.tab' c_r=0.00083284 M_s=1251180 a=20838 k_p=69771 alpha=0.08
 ```
+
+<img src="interactive.png" width="800" alt="">
 
 ### Helpful tips
 

@@ -47,7 +47,7 @@ def run(
                     "width": "300px",
                     "padding": "10px",
                     "boxSizing": "border-box",
-                    "overflowY": "auto",  # scroll if content exceeds
+                    "overflowY": "auto",
                     "font-size": "12px",
                 },
                 children=[
@@ -215,20 +215,12 @@ def run(
                     html.Div([html.H3("Command line")]),
                     html.Div(
                         id="command-text",
-                        style={
-                            "marginTop": "10px",
-                            "whiteSpace": "pre-wrap",
-                            "wordWrap": "break-word",
-                        },
+                        style={"marginTop": "10px", "whiteSpace": "pre-wrap", "wordWrap": "break-word"},
                     ),
-                    html.Div([html.H3("Last evaluation status")]),
+                    html.Div([html.H3("Last solution status")]),
                     html.Div(
                         id="message",
-                        style={
-                            "marginTop": "10px",
-                            "whiteSpace": "pre-wrap",
-                            "wordWrap": "break-word",
-                        },
+                        style={"marginTop": "10px", "whiteSpace": "pre-wrap", "wordWrap": "break-word"},
                     ),
                 ],
             ),
@@ -236,8 +228,8 @@ def run(
             html.Div(
                 style={
                     "flex": "1",  # fill remaining horizontal space
-                    "display": "flex",  # flex container so children can expand
-                    "flexDirection": "column",  # ensure child can fill vertical space
+                    "display": "flex",
+                    "flexDirection": "column",
                     "padding": "10px",
                     "boxSizing": "border-box",
                 },
@@ -341,22 +333,21 @@ def run(
         fig = go.Figure()
         for idx, br in enumerate(branches):
             hb = hm_to_plot(br)
-            fig.add_trace(
-                go.Scattergl(x=hb[:, 0], y=hb[:, 1], mode="lines", name=f"J(H) JA #{idx}", line=dict(width=2))
-            )
+            fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], mode="lines", name=f"JA #{idx}", line=dict(width=2)))
         if ref is not None:
             ref_params = dict(mode="markers", marker=dict(size=3))
             if len(ref.descending):
                 hb = hm_to_plot(ref.descending)
-                fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], name="J(H) reference descending", **ref_params))
+                fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], name="reference descending", **ref_params))
             if len(ref.ascending):
                 hb = hm_to_plot(ref.ascending)
-                fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], name="J(H) reference ascending", **ref_params))
+                fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], name="reference ascending", **ref_params))
         fig.update_layout(
             xaxis_title="H [A/m]",
             yaxis_title=y_label,
             height=1000,
             margin=dict(l=20, r=20, t=20, b=20),
+            hovermode="x",
         )
 
         # Generate output messages.
