@@ -153,8 +153,8 @@ def do_fit(
     # Initialize the coefficients and their bounds.
     M_s_min = float(  # Saturation magnetization cannot be less than the values seen in the reference curve.
         max(
-            np.abs(ref.descending[:, 1]).max(),
-            np.abs(ref.ascending[:, 1]).max(),
+            np.abs(ref.descending[:, 1]).max(initial=0),
+            np.abs(ref.ascending[:, 1]).max(initial=0),
         )
     )
     M_s_max = float(  # Maximum cannot be less than the minimum. If they are equal, assume M_s is known precisely.
