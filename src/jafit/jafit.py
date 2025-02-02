@@ -100,6 +100,7 @@ def do_fit(
     H_amp_max: float | None,
     interpolate_points: int | None,
     max_evaluations_per_stage: int | None,
+    priority_region_error_gain: float | None,
     stage: int,
     plot_failed: bool,
     fast: bool,
@@ -192,6 +193,9 @@ def do_fit(
     _logger.info("H amplitude range: %s [A/m]", H_stop)
     assert H_stop[0] <= H_stop[1]
 
+    # Loss function parameters.
+    priority_region_error_gain = priority_region_error_gain or 1.0
+
     # Run the optimizer.
     if (H_c > 100 and B_r > 0.1) and stage < 1:
         _logger.info("Demag knee detected; performing initial H_c|B_r|BH_max optimization")
@@ -220,7 +224,7 @@ def do_fit(
             x_max=x_max,
             obj_fn=make_objective_function(
                 lambda c: solve(model, c, H_stop, fast=fast),
-                loss.make_nearest(ref_interpolated),
+                loss.make_nearest(ref_interpolated, priority_region_error_gain=priority_region_error_gain),
                 stop_evals=max_evaluations_per_stage or 10**7,
                 callback=make_callback("1_global", ref_interpolated, plot_failed=plot_failed),
                 quiet=quiet,
@@ -235,7 +239,7 @@ def do_fit(
         x_max=x_max,
         obj_fn=make_objective_function(
             lambda c: solve(model, c, H_stop),  # Fine-tuning cannot use fast mode.
-            loss.make_nearest(ref_interpolated),
+            loss.make_nearest(ref_interpolated, priority_region_error_gain=priority_region_error_gain),
             stop_evals=max_evaluations_per_stage or 10**5,
             callback=make_callback("2_local", ref_interpolated, plot_failed=plot_failed),
             quiet=quiet,
@@ -305,6 +309,7 @@ def run(
     M_s_max: float | None,
     H_amp_min: float | None,
     H_amp_max: float | None,
+    priority_region_error_gain: float | None,
     interpolate_points: int | None,
     effort: int | None,
     stage: int,
@@ -326,6 +331,7 @@ def run(
             H_amp_max=H_amp_max,
             interpolate_points=interpolate_points,
             max_evaluations_per_stage=effort,
+            priority_region_error_gain=priority_region_error_gain,
             stage=stage,
             plot_failed=plot_failed,
             fast=fast,
@@ -428,6 +434,7 @@ def main() -> None:
             M_s_max=_param(named, "M_s_max", float),
             H_amp_min=H_amp_min,
             H_amp_max=H_amp_max,
+            priority_region_error_gain=_param(named, "preg", float),
             interpolate_points=_param(named, "interpolate", int),
             effort=_param(named, "effort", int),
             stage=_param(named, "stage", int, 0),

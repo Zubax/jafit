@@ -73,7 +73,7 @@ def make_magnetization(ref: HysteresisLoop, *, lattice_size: int = 10**4) -> Los
     return fun
 
 
-def make_nearest(ref: HysteresisLoop, *, priority_region_error_gain: float = 10.0) -> LossFunction:
+def make_nearest(ref: HysteresisLoop, *, priority_region_error_gain: float = 1.0) -> LossFunction:
     """
     Dissimilarity metric that computes the mean distance between each point of the reference H(M) curves and the
     nearest point on the solution H(M) curves. The computed loss values per loop branch are averaged.
@@ -112,7 +112,7 @@ def make_nearest(ref: HysteresisLoop, *, priority_region_error_gain: float = 10.
 
     preg = priority_region_error_gain
     rd, ra = scale(ref.descending), scale(ref.ascending)
-    _logger.info("Normalized H scale: %f, M scale: %f", H_scale, M_scale)
+    _logger.info("Normalized H scale: %f, M scale: %f; PREG=%f", H_scale, M_scale, priority_region_error_gain)
 
     def fun(sol: HysteresisLoop) -> float:
         sd, sa = scale(sol.descending), scale(sol.ascending)

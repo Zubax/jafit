@@ -48,10 +48,10 @@ so it may be a good idea to create a dedicated directory for this purpose.
 
 ```shell
 # Fit the example curve from Altair Flux:
-jafit model=venk ref="data/B(H).Altair_Flux.Example.csv" interpolate=300
+jafit model=venk ref="data/B(H).Altair_Flux.Example.csv" interpolate=300 H_amp_max=0
 
 # Find coefficients for isotropic AlNiCo 5:
-jafit model=venk ref="data/B(H).Jesenik.AlNiCo.tab"
+jafit model=venk ref="data/B(H).Jesenik.AlNiCo.tab" preg=100
 ```
 
 Output symbol legend per function evaluation:
@@ -82,6 +82,11 @@ then the tool will simply use the maximum magnetization seen in the dataset as t
 and remove the corresponding dimension from the optimization problem.
 
 Optionally, you can provide the initial guess for (some of) the coefficients: `c_r`, `M_s`, `a`, `k_p`, `alpha`.
+
+The priority region error gain -- `preg` --
+can be set to a value greater than one to make the optimizer assign proportionally higher importance
+to the part of the descending branch where $M>0$, and the part of the ascending branch where $M<0$.
+Example: `preg=100`.
 
 Option `interpolate=N`, where N is a positive integer, can be used to interpolate the reference curve
 with N equidistant sample points distributed along its length. Note that this is not the same as sampling the curve
