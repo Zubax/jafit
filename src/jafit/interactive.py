@@ -320,6 +320,7 @@ def run(
         except SolverError as ex:
             exception, branches = ex, ex.partial_curves
         except Exception as ex:
+            _logger.exception("Solver failure: %s", ex)
             exception, branches = ex, []
 
         # Compute losses
