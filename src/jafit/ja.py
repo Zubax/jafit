@@ -504,7 +504,7 @@ def _dL_dx(x: float) -> float:
 @njit
 def _nonzero(x: float, eps: float = 1e-20) -> float:
     if np.abs(x) < eps:
-        return np.sign(x) * eps  # type: ignore
+        return np.copysign(eps, x)  # type: ignore
     return x
 
 
