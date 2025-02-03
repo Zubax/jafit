@@ -95,6 +95,7 @@ def do_fit(
     a: float | None,
     k_p: float | None,
     alpha: float | None,
+    M_s_min: float | None,
     M_s_max: float | None,
     H_amp_min: float | None,
     H_amp_max: float | None,
@@ -152,12 +153,14 @@ def do_fit(
         ref_interpolated = ref
 
     # Initialize the coefficients and their bounds.
-    M_s_min = float(  # Saturation magnetization cannot be less than the values seen in the reference curve.
-        max(
-            np.abs(ref.descending[:, 1]).max(initial=0),
-            np.abs(ref.ascending[:, 1]).max(initial=0),
+    if M_s_min is None:
+        M_s_min = float(  # Saturation magnetization cannot be less than the values seen in the reference curve.
+            max(
+                np.abs(ref.descending[:, 1]).max(initial=0),
+                np.abs(ref.ascending[:, 1]).max(initial=0),
+            )
         )
-    )
+    assert M_s_min is not None
     M_s_max = float(  # Maximum cannot be less than the minimum. If they are equal, assume M_s is known precisely.
         max(
             M_s_min,
@@ -306,6 +309,7 @@ def run(
     model: Model,
     ref: HysteresisLoop | None,
     cf: dict[str, float | None],
+    M_s_min: float | None,
     M_s_max: float | None,
     H_amp_min: float | None,
     H_amp_max: float | None,
@@ -326,6 +330,7 @@ def run(
             ref,
             model=model,
             **cf,
+            M_s_min=M_s_min,
             M_s_max=M_s_max,
             H_amp_min=H_amp_min,
             H_amp_max=H_amp_max,
@@ -404,13 +409,15 @@ def main() -> None:
             alpha=_param(named, "alpha", float),
         )
 
+        M_s_min = _param(named, "M_s_min", float)
+        M_s_max = _param(named, "M_s_max", float)
         H_amp_min = _param(named, "H_amp_min", float)
         H_amp_max = _param(named, "H_amp_max", float)
         if _param(named, "interactive", bool, False):
             model = model or Model.VENKATARAMAN
             initial_coef = Coef(
                 c_r=coef["c_r"] or 0.1,
-                M_s=coef["M_s"] or 1.5e6,
+                M_s=coef["M_s"] or M_s_min or M_s_max or 1e6,
                 a=coef["a"] or 100e3,
                 k_p=coef["k_p"] or 100e3,
                 alpha=coef["alpha"] or 0.1,
@@ -431,7 +438,8 @@ def main() -> None:
             model=model,
             ref=ref,
             cf=coef,
-            M_s_max=_param(named, "M_s_max", float),
+            M_s_min=M_s_min,
+            M_s_max=M_s_max,
             H_amp_min=H_amp_min,
             H_amp_max=H_amp_max,
             priority_region_error_gain=_param(named, "preg", float),
