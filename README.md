@@ -46,6 +46,8 @@ depending on the curve shape and the performance of your computer.
 Intermediate results and logs will be stored in the current working directory,
 so it may be a good idea to create a dedicated directory for this purpose.
 
+Basic examples:
+
 ```shell
 # Fit the example curve from Altair Flux:
 jafit model=venk ref="data/B(H).Altair_Flux.Example.csv" interpolate=300 H_amp_max=0
@@ -76,17 +78,21 @@ in the reference dataset; to do that, simply pass `H_amp_max=0`.
 
 By default, the tool will assume that the reference loop may not push the material into saturation,
 and thus it will attempt to determine $M_s$ as part of the optimization problem.
-If a good guess of the maximum $M_s$ is available, you may want to set it manually using `M_s_max`.
-If the specified `M_s_max` is not greater than the maximum magnetization value seen in the reference curve,
-then the tool will simply use the maximum magnetization seen in the dataset as the true $M_s$,
+By default, the range for the $M_s$ search is determined automatically using heuristics.
+The heuristics can be overridden using the optional `M_s_min` and/or `M_s_max` parameters.
+If `M_s_max<=M_s_min`, the tool will assume that $M_s$ is known exactly, $M_s$=`M_s_min`=`M_s_max`,
 and remove the corresponding dimension from the optimization problem.
+This is often useful because manufacturers often provide the saturation magnetization (or polarization) directly.
 
 Optionally, you can provide the initial guess for (some of) the coefficients: `c_r`, `M_s`, `a`, `k_p`, `alpha`.
+It is required that `M_s_min <= M_s <= M_s_max`; if both min and max are provided, `M_s` is not needed.
+It is usually not necessary to set `k_p` because it defaults to $H_c$, which is a reasonable guess.
 
 The priority region error gain -- `preg` --
 can be set to a value greater than one to make the optimizer assign proportionally higher importance
 to the part of the descending branch where $M>0$, and the part of the ascending branch where $M<0$.
 Example: `preg=100`.
+This option only has effect if the full reference loop is provided.
 
 Option `interpolate=N`, where N is a positive integer, can be used to interpolate the reference curve
 with N equidistant sample points distributed along its length. Note that this is not the same as sampling the curve
@@ -106,6 +112,28 @@ during the optimization process. While ultra-high stiffness may be considered un
 unrealistically high magnetic susceptibility, being able to solve such cases is useful as it improves the smoothness
 of the optimization landscape, which in turn helps the optimizer converge faster and reduces the chances of
 getting stuck in local minima.
+
+For a more advanced usage example, consider the following datasheet from the manufacturer:
+
+<img src="data/B(H),J(H).VegaTechnik.LNG60.png" width="600" alt="">
+
+The following data is immediately available:
+
+* The third quadrant of the $B(H)$ curve; the data is extracted here as `data/B(H).VegaTechnik.LNG60.tab`.
+
+* The third quadrant polarization $J(H)$ curve is also available but not needed --- the tool will convert
+  $B(H) \Rightarrow J(H) \Rightarrow M(H)$.
+
+* Saturation magnetization $M_s=1174563$ A/m, which is expressed as saturation polarization $J_s$ in the datasheet.
+
+* The excitation field intensity $H_m=713014$ A/m.
+
+Sadly, the datasheet is not using the SI system, so manual conversion is needed.
+The corresponding optimization command is as follows:
+
+```shell
+jafit ref='data/B(H).VegaTechnik.LNG60.tab' model=venkataraman M_s_min=1174563 M_s_max=1174563 H_amp_min=713014 H_amp_max=713014
+```
 
 ### Adjust the parameters interactively
 

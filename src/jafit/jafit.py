@@ -172,9 +172,9 @@ def do_fit(
     coef = Coef(
         c_r=_perhaps(c_r, 0.1),
         M_s=_perhaps(M_s, (M_s_min + M_s_max) * 0.5),
-        a=_perhaps(a, 1e3),
+        a=_perhaps(a, 10e3),
         k_p=_perhaps(k_p, max(H_c, 1.0)),  # For soft materials, k_p≈H_ci. For others this is still a good guess.
-        alpha=_perhaps(alpha, 0.001),
+        alpha=_perhaps(alpha, 0.0001),
     )
     x_min = Coef(c_r=1e-12, M_s=M_s_min, a=1e-6, k_p=1e-6, alpha=1e-12)
     x_max = Coef(c_r=0.999999999, M_s=M_s_max, a=3e6, k_p=3e6, alpha=10.0)
