@@ -129,6 +129,7 @@ For the benefit of all mankind, please only use SI units. To convert data from a
 
 - $1 \ \text{oersted} \approx 79.57747 \frac{\text{A}}{\text{m}}$
 - $1 \ \frac{\text{emu}}{\text{cm}^3} = 10^3 \frac{\text{A}}{\text{m}}$
+- $1 \ \text{gauss} = 10^{-4} \ \text{T}$
 
 For more, refer to `papers/magnetic_units.pdf`.
 
