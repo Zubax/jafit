@@ -83,7 +83,7 @@ def test(session: nox.Session) -> None:
     )
     for preg in [1, 100]:
         run(
-            f"model=ve ref='{ROOT}/data/B(H).Jesenik.AlNiCo.tab' quiet=1 stage=2 preg={preg} "
+            f"model=ve ref='{ROOT}/data/B(H).Jesenik.AlNiCo.tab' effort=20 quiet=1 stage=2 preg={preg} "
             f" c_r=0.1 M_s=1460000 a=20000 k_p=66000 alpha=0.063"
         )
 
