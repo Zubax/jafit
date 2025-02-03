@@ -138,7 +138,7 @@ def fit_global(
     _logger.info("Global optimization result:\n%s", res)
     # We have to check is_done because an early stop is considered an error by the optimizer (strange but true).
     if res.success or (is_done and np.all(np.isfinite(res.x))):
-        return Coef(*map(float, res.x))
+        return conv(res.x)
     raise RuntimeError(f"Global optimization failed: {res.message}")
 
 
@@ -197,7 +197,7 @@ def fit_local(
 
     _logger.info("Local optimization result:\n%s", res)
     if res.success or (is_done and np.all(np.isfinite(res.x))):
-        return Coef(*map(float, res.x))
+        return conv(res.x)
     raise RuntimeError(f"Local optimization failed: {res.message}")
 
 
