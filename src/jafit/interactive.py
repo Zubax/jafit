@@ -4,7 +4,7 @@ import time
 from logging import getLogger
 from typing import Any
 from .ja import Coef, solve, SolverError, Model
-from .mag import HysteresisLoop, hm_to_hj, hm_to_hb
+from .mag import HysteresisLoop, hm_to_hj, hm_to_hb, extract_H_c_B_r_BH_max
 from . import loss
 
 
@@ -212,16 +212,45 @@ def run(
                             ),
                         ]
                     ),
-                    html.Div([html.H3("Command line")]),
-                    html.Div(
-                        id="command-text",
-                        style={"marginTop": "10px", "whiteSpace": "pre-wrap", "wordWrap": "break-word"},
+                    html.Div([html.H3("Last solution")]),
+                    html.Table(
+                        [
+                            html.Tr(
+                                [
+                                    html.Td("H_c"),
+                                    html.Td(dcc.Input(id="solution-H_c", value="N/A", readOnly=True)),
+                                    html.Td("A/m"),
+                                ]
+                            ),
+                            html.Tr(
+                                [
+                                    html.Td("H_ci"),
+                                    html.Td(dcc.Input(id="solution-H_ci", value="N/A", readOnly=True)),
+                                    html.Td("A/m"),
+                                ]
+                            ),
+                            html.Tr(
+                                [
+                                    html.Td("B_r"),
+                                    html.Td(dcc.Input(id="solution-B_r", value="N/A", readOnly=True)),
+                                    html.Td("T"),
+                                ]
+                            ),
+                            html.Tr(
+                                [
+                                    html.Td("BH_max"),
+                                    html.Td(dcc.Input(id="solution-BH_max", value="N/A", readOnly=True)),
+                                    html.Td("J/m^3"),
+                                ]
+                            ),
+                        ]
                     ),
-                    html.Div([html.H3("Last solution status")]),
                     html.Div(
                         id="message",
                         style={"marginTop": "10px", "whiteSpace": "pre-wrap", "wordWrap": "break-word"},
                     ),
+                    html.Div([html.H3("Command line")]),
+                    html.Div([dcc.Textarea(id="command-text", value="", readOnly=True, style={"width": "100%"})]),
                 ],
             ),
             # MAIN AREA
@@ -252,9 +281,13 @@ def run(
     @app.callback(
         [
             Output("scatter-plot", "figure"),
-            Output("command-text", "children"),
+            Output("command-text", "value"),
             Output("message", "children"),
             Output("message", "style"),
+            Output("solution-H_c", "value"),
+            Output("solution-H_ci", "value"),
+            Output("solution-B_r", "value"),
+            Output("solution-BH_max", "value"),
         ],
         [
             Input("solve-button", "n_clicks"),
@@ -323,7 +356,13 @@ def run(
             _logger.exception("Solver failure: %s", ex)
             exception, branches = ex, []
 
-        # Compute losses
+        # Compute derived properties.
+        H_c, H_ci, B_r, BH_max = None, None, None, None  # type: float | None, float | None, float | None, float | None
+        if sol:
+            hm = sol.descending
+            H_c, B_r, BH_max = extract_H_c_B_r_BH_max(hm)
+            H_ci, _, _ = extract_H_c_B_r_BH_max(hm, intrinsic=True)
+
         losses: dict[str, float] = {}
         if ref is not None and sol is not None:
             losses["nearest"] = loss.make_nearest(ref)(sol)
@@ -358,10 +397,12 @@ def run(
             f" H_amp_min={H_amp[0]} H_amp_max={H_amp[1]}"
         )
         if exception:
-            msg_style["color"] = "#800"
+            msg_style["color"] = "#600"
+            msg_style["background"] = "#fdd"
             msg = f"{type(exception).__name__}: {exception}"
         else:
-            msg_style["color"] = "#080"
+            msg_style["color"] = "#060"
+            msg_style["background"] = "#dfd"
             msg = f"Solved in {time.monotonic() - started_at:.3f} s"
         if losses:
             msg += "\nLosses:"
@@ -370,8 +411,14 @@ def run(
                 msg += f"\n{k}= {v}"
 
         _logger.info("Solved in %.3f s", time.monotonic() - started_at)
+
+        value_H_c = f"{H_c:.1f}" if H_c is not None else "N/A"
+        value_H_ci = f"{H_ci:.1f}" if H_ci is not None else "N/A"
+        value_B_r = f"{B_r:.3f}" if B_r is not None else "N/A"
+        value_BH_max = f"{BH_max:.0f}" if BH_max is not None else "N/A"
+
         # noinspection PyTypeChecker
-        return fig, command_text, msg, msg_style
+        return fig, command_text, msg, msg_style, value_H_c, value_H_ci, value_B_r, value_BH_max
 
     app.run_server(debug=True, use_reloader=False)
 
