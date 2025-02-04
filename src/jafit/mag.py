@@ -169,6 +169,9 @@ def extract_H_c_B_r_BH_max(hm: npt.NDArray[np.float64], *, intrinsic: bool = Fal
     x = x[(x[:, 0] <= 0) & (x[:, 1] >= 0)]  # Keep only the second quadrant: H<=0, B>=0
     if len(x) > 0:
         H_c = np.abs(np.min(x[:, 0]))
+        # TODO: empirical data is often noisy and sparse, which causes this method to incur a large error.
+        # Interpolation could help with sparsity but not with noise.
+        # Perhaps we could use a high-order least-squares polynomial fit here?
         BH_max = -np.min(x[:, 0] * x[:, 1])
     else:
         H_c, BH_max = 0, 0
