@@ -17,9 +17,9 @@ import logging
 from pathlib import Path
 import numpy as np
 from .ja import Solution, Coef, solve, SolverError, Model
-from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, mu_0, hm_to_hj
+from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, hm_to_hj
 from .opt import fit_global, fit_local, make_objective_function
-from . import loss, io, vis, __version__
+from . import loss, io, vis, interactive, __version__
 
 
 PLOT_FILE_SUFFIX = ".jafit.png"
@@ -95,18 +95,18 @@ def do_fit(
     a: float | None,
     k_p: float | None,
     alpha: float | None,
+    M_s_min: float | None,
     M_s_max: float | None,
+    H_amp_min: float | None,
     H_amp_max: float | None,
     interpolate_points: int | None,
     max_evaluations_per_stage: int | None,
+    priority_region_error_gain: float | None,
     stage: int,
     plot_failed: bool,
     fast: bool,
     quiet: bool,
-) -> tuple[
-    Coef,
-    tuple[float, float] | float,
-]:
+) -> tuple[Coef, tuple[float, float]]:
     if fast:
         _logger.warning("⚠ Fast mode is enabled; the solver may produce inaccurate results or fail to converge.")
 
@@ -114,8 +114,6 @@ def do_fit(
         raise ValueError("The reference descending curve is empty")
     H_c, B_r, BH_max = extract_H_c_B_r_BH_max(ref.descending)
     _logger.info("Given: %s; derived parameters: H_c=%.6f A/m, B_r=%.6f T, BH_max=%.3f J/m^3", ref, H_c, B_r, BH_max)
-    M_s_min = B_r / mu_0  # Heuristic: B=mu_0*(H+M); H=0; B=mu_0*M; hence, M_s>=B_r/mu_0
-    _logger.info("Derived minimum M_s: %.6f A/m", M_s_min)
 
     # Interpolate the reference curve such that the sample points are equally spaced to improve the
     # behavior of the nearest-point loss function. This is not needed for the other loss functions.
@@ -155,40 +153,51 @@ def do_fit(
         ref_interpolated = ref
 
     # Initialize the coefficients and their bounds.
-    M_s_max = M_s_max or max(M_s_min * 1.5, 1.8e6)  # Heuristic
+    if M_s_min is None:
+        M_s_min = float(  # Saturation magnetization cannot be less than the values seen in the reference curve.
+            max(
+                np.abs(ref.descending[:, 1]).max(initial=0),
+                np.abs(ref.ascending[:, 1]).max(initial=0),
+            )
+        )
+    assert M_s_min is not None
+    M_s_max = float(  # Maximum cannot be less than the minimum. If they are equal, assume M_s is known precisely.
+        max(
+            M_s_min,
+            M_s_max if M_s_max is not None else max(M_s_min * 1.6, 2e6),
+        )
+    )
+    _logger.info("Using M_s_min=%f M_s_max=%f", M_s_min, M_s_max)
     assert M_s_max is not None
     coef = Coef(
         c_r=_perhaps(c_r, 0.1),
-        M_s=_perhaps(M_s, M_s_min * 1.001),  # Optimizers tend to be unstable if parameters are too close to the bounds
-        a=_perhaps(a, 1e3),
+        M_s=_perhaps(M_s, (M_s_min + M_s_max) * 0.5),
+        a=_perhaps(a, 10e3),
         k_p=_perhaps(k_p, max(H_c, 1.0)),  # For soft materials, k_p≈H_ci. For others this is still a good guess.
-        alpha=_perhaps(alpha, 0.001),
+        alpha=_perhaps(alpha, 0.0001),
     )
     x_min = Coef(c_r=1e-12, M_s=M_s_min, a=1e-6, k_p=1e-6, alpha=1e-12)
     x_max = Coef(c_r=0.999999999, M_s=M_s_max, a=3e6, k_p=3e6, alpha=10.0)
     _logger.info("Initial, minimum, and maximum coefficients:\n%s\n%s\n%s", coef, x_min, x_max)
 
-    # Ensure that the saturation detection heuristic does not mistakenly terminate the sweep too early.
-    # If we have a full hysteresis loop, simply limit the H-range to that; this speeds up optimization considerably
-    # because we can quickly weed out materials that don't behave as expected in the specified loop. The provided
-    # loop in this case doesn't need to be the major one, too!
-    if not H_amp_max:
-        _logger.warning("H_amp_max is not specified; using a heuristic")
-    H_stop: tuple[float, float] | float
-    if ref.is_full:
-        # If we have the full loop, simply replicate its H-range. The loop may be a minor one.
-        H_stop = max(float(np.abs(ref.H_range).max()), H_amp_max or 0)
-    else:
-        # If we only have a part of the loop, assume that part belongs to the major loop.
-        # We have to employ heuristics to determine when to stop the sweep.
-        H_stop = float(
-            max(
-                np.abs(ref.H_range).max(),
-                H_c * 2,
-                M_s_min * 0.1,
-            )
-        ), float(H_amp_max or max(100e3, M_s_min * 2, H_c * 4))
+    # Determine the H amplitude range.
+    if H_amp_min is None:
+        # By default, simply use the peak value from the reference dataset.
+        # This enables simple treatment of minor loops, where we just set H_amp_max=0, and then
+        # H_amp_min=H_amp_max=max(abs(H_ref)), thus we repeat the excitation from the reference dataset.
+        # Using anything more clever here would make this simple case more complex and we don't want that.
+        H_amp_min = float(np.abs(ref.H_range).max())  # Like in the reference dataset.
+    if H_amp_max is None:
+        # We need to ensure that we can push the material into saturation while not wasting too much time
+        # trying to solve nonsaturable materials with very low permeability.
+        H_amp_max = max(100e3, M_s_max * 2, H_c * 5)  # Being clever.
+    H_amp_max = max(H_amp_max, H_amp_min)
+    H_stop = H_amp_min, H_amp_max
     _logger.info("H amplitude range: %s [A/m]", H_stop)
+    assert H_stop[0] <= H_stop[1]
+
+    # Loss function parameters.
+    priority_region_error_gain = priority_region_error_gain or 1.0
 
     # Run the optimizer.
     if (H_c > 100 and B_r > 0.1) and stage < 1:
@@ -218,7 +227,7 @@ def do_fit(
             x_max=x_max,
             obj_fn=make_objective_function(
                 lambda c: solve(model, c, H_stop, fast=fast),
-                loss.make_nearest(ref_interpolated),
+                loss.make_nearest(ref_interpolated, priority_region_error_gain=priority_region_error_gain),
                 stop_evals=max_evaluations_per_stage or 10**7,
                 callback=make_callback("1_global", ref_interpolated, plot_failed=plot_failed),
                 quiet=quiet,
@@ -233,7 +242,7 @@ def do_fit(
         x_max=x_max,
         obj_fn=make_objective_function(
             lambda c: solve(model, c, H_stop),  # Fine-tuning cannot use fast mode.
-            loss.make_nearest(ref_interpolated),
+            loss.make_nearest(ref_interpolated, priority_region_error_gain=priority_region_error_gain),
             stop_evals=max_evaluations_per_stage or 10**5,
             callback=make_callback("2_local", ref_interpolated, plot_failed=plot_failed),
             quiet=quiet,
@@ -241,7 +250,7 @@ def do_fit(
     )
 
     # Emit a warning if the final coefficients are close to the bounds.
-    rtol, atol = 1e-6, 1e-9
+    rtol, atol = 0.01, 1e-6
     # noinspection PyTypeChecker
     for k, v in dataclasses.asdict(coef).items():
         lo, hi = x_min.__getattribute__(k), x_max.__getattribute__(k)
@@ -300,9 +309,11 @@ def run(
     model: Model,
     ref: HysteresisLoop | None,
     cf: dict[str, float | None],
+    M_s_min: float | None,
     M_s_max: float | None,
     H_amp_min: float | None,
     H_amp_max: float | None,
+    priority_region_error_gain: float | None,
     interpolate_points: int | None,
     effort: int | None,
     stage: int,
@@ -319,10 +330,13 @@ def run(
             ref,
             model=model,
             **cf,
+            M_s_min=M_s_min,
             M_s_max=M_s_max,
+            H_amp_min=H_amp_min,
             H_amp_max=H_amp_max,
             interpolate_points=interpolate_points,
             max_evaluations_per_stage=effort,
+            priority_region_error_gain=priority_region_error_gain,
             stage=stage,
             plot_failed=plot_failed,
             fast=fast,
@@ -334,7 +348,7 @@ def run(
         if any(x is None for x in cf.values()):
             raise ValueError(f"Supplied coefficients are incomplete, and optimization is not requested: {cf}")
         coef = Coef(**cf)  # type: ignore
-        H_amp_min = H_amp_min or max(coef.k_p * 2, 100e3)  # In soft materials k_p≈H_ci
+        H_amp_min = H_amp_min or max(coef.k_p * 2, 10e3)  # In soft materials k_p≈H_ci
         H_amp_max = H_amp_max or max(coef.M_s * 2, 1e6)
         H_stop = H_amp_min, H_amp_max
 
@@ -380,10 +394,6 @@ def main() -> None:
                 if enum_item.name.upper().startswith(model_name):
                     model = enum_item
                     break
-        if model is None:
-            raise ValueError(
-                f"Model name not understood: {model_name!r}. Choose one: {', '.join(x.name.lower() for x in Model)}"
-            )
 
         # Load the reference curve.
         ref: HysteresisLoop | None = None
@@ -399,14 +409,40 @@ def main() -> None:
             alpha=_param(named, "alpha", float),
         )
 
+        M_s_min = _param(named, "M_s_min", float)
+        M_s_max = _param(named, "M_s_max", float)
+        H_amp_min = _param(named, "H_amp_min", float)
+        H_amp_max = _param(named, "H_amp_max", float)
+        if _param(named, "interactive", bool, False):
+            model = model or Model.VENKATARAMAN
+            initial_coef = Coef(
+                c_r=coef["c_r"] or 0.1,
+                M_s=coef["M_s"] or M_s_min or M_s_max or 1e6,
+                a=coef["a"] or 100e3,
+                k_p=coef["k_p"] or 100e3,
+                alpha=coef["alpha"] or 0.1,
+            )
+            if H_amp_min is None:
+                H_amp_min = max(np.abs(ref.H_range)) if ref is not None else initial_coef.k_p * 2
+            if H_amp_max is None:
+                H_amp_max = max(1e6, initial_coef.M_s * 2, initial_coef.k_p * 5)  # k_p≈H_ci for soft materials
+            interactive.run(ref, model, initial_coef, (H_amp_min, H_amp_max))
+            return
+
+        if model is None:
+            raise ValueError(
+                f"Model name not understood: {model_name!r}. Choose one: {', '.join(x.name.lower() for x in Model)}"
+            )
         assert isinstance(model, Model)
         run(
             model=model,
             ref=ref,
             cf=coef,
-            M_s_max=_param(named, "M_s_max", float),
-            H_amp_min=_param(named, "H_amp_min", float),
-            H_amp_max=_param(named, "H_amp_max", float),
+            M_s_min=M_s_min,
+            M_s_max=M_s_max,
+            H_amp_min=H_amp_min,
+            H_amp_max=H_amp_max,
+            priority_region_error_gain=_param(named, "preg", float),
             interpolate_points=_param(named, "interpolate", int),
             effort=_param(named, "effort", int),
             stage=_param(named, "stage", int, 0),

@@ -73,7 +73,7 @@ def make_magnetization(ref: HysteresisLoop, *, lattice_size: int = 10**4) -> Los
     return fun
 
 
-def make_nearest(ref: HysteresisLoop) -> LossFunction:
+def make_nearest(ref: HysteresisLoop, *, priority_region_error_gain: float = 1.0) -> LossFunction:
     """
     Dissimilarity metric that computes the mean distance between each point of the reference H(M) curves and the
     nearest point on the solution H(M) curves. The computed loss values per loop branch are averaged.
@@ -88,8 +88,15 @@ def make_nearest(ref: HysteresisLoop) -> LossFunction:
     and the solution values are scaled accordingly. The computed loss value is therefore also normalized.
     The normalization is done to ensure that the optimizer assigns comparable importance to all dimensions.
 
+    The priority_region_error_gain is used to assign higher weights to quadrants 1 and 2 of the descending branch
+    and quadrants 3 and 4 of the ascending branch: the error in the priority region is multiplied by this value
+    and kept as-is in the other regions. Set to 1 to disable this feature.
+
     The computational complexity is high, not recommended for large datasets without prior downsampling.
     """
+    priority_region_error_gain = float(priority_region_error_gain)
+    if not np.isfinite(priority_region_error_gain) or priority_region_error_gain < 1e-9:
+        raise ValueError(f"Invalid {priority_region_error_gain=}")
 
     def abs_max(m: npt.NDArray[np.float64], col: int) -> float:
         return float(np.abs(m[:, col]).max(initial=0.0))
@@ -103,16 +110,24 @@ def make_nearest(ref: HysteresisLoop) -> LossFunction:
         m[:, 1] /= M_scale
         return m
 
+    preg = priority_region_error_gain
     rd, ra = scale(ref.descending), scale(ref.ascending)
-    _logger.info("Normalized H scale: %f, M scale: %f", H_scale, M_scale)
+    _logger.info("Normalized H scale: %f, M scale: %f; PREG=%f", H_scale, M_scale, priority_region_error_gain)
 
     def fun(sol: HysteresisLoop) -> float:
         sd, sa = scale(sol.descending), scale(sol.ascending)
         loss: list[np.float64] = []
+
         if len(rd) and len(sd):
-            loss.append(_mean_distance_points_to_polyline(rd, sd))
+            d = np.array([_distance_point_to_polyline(q, sd) for q in rd])
+            w = np.array([1.0 if m < 0 else preg for _h, m in rd])
+            loss.append(np.mean(d * w))
+
         if len(ra) and len(sa):
-            loss.append(_mean_distance_points_to_polyline(ra, sa))
+            d = np.array([_distance_point_to_polyline(q, sa) for q in ra])
+            w = np.array([1.0 if m > 0 else preg for _h, m in ra])
+            loss.append(np.mean(d * w))
+
         if not loss:
             raise ValueError("No same-side hysteresis branches to compare")
         return float(np.mean(loss))
@@ -120,19 +135,28 @@ def make_nearest(ref: HysteresisLoop) -> LossFunction:
     return fun
 
 
-@njit(nogil=True)
-def _mean_distance_points_to_polyline(points: npt.NDArray[np.float64], polyline: npt.NDArray[np.float64]) -> np.float64:
+@njit
+def _distance_point_to_polyline(point: npt.NDArray[np.float64], polyline: npt.NDArray[np.float64]) -> np.float64:
     """
-    >>> fun = lambda r, s: float(_mean_distance_points_to_polyline(np.array(r), np.array(s)))
-    >>> fun([(0,0),(1,1),(2,2)], [(0,0),(1,1),(2,2)])
+    See ``_squared_distance_point_to_polyline()`` for the description.
+
+    >>> fun = lambda p, line: float(_distance_point_to_polyline(np.array(p), np.array(line)))
+    >>> fun((0,0), [(-1,1),(1,1),(2,2)])
+    1.0
+    >>> round(fun((2,1), [(-1,1),(1,1),(2,2)]), 3)
+    0.707
+    >>> round(fun((1,2), [(-1,1),(1,1),(2,2)]), 3)
+    0.707
+    >>> fun((2,2), [(-1,1),(1,1),(2,2)])
     0.0
-    >>> round(fun([(0,0),(1,1),(2,2)], [(0,0),(1,1),(3,1)]), 3)
-    0.333
+    >>> with np.errstate(divide="ignore", invalid="ignore"):
+    ...     fun((0,0), [(-1,1),(1,1),(1,1),(2,2)])
+    1.0
+    >>> with np.errstate(divide="ignore", invalid="ignore"):
+    ...     fun((2,2), [(-1,1),(1,1),(1,1),(2,2)])
+    0.0
     """
-    assert len(points.shape) == 2 and points.shape[1] == 2
-    assert len(polyline.shape) == 2 and polyline.shape[1] == 2
-    d = np.array([np.sqrt(_squared_distance_point_to_polyline(q, polyline)) for q in points], dtype=np.float64)
-    return np.mean(d)  # type: ignore
+    return np.sqrt(_squared_distance_point_to_polyline(point, polyline))  # type: ignore
 
 
 @njit(nogil=True)

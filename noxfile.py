@@ -76,9 +76,16 @@ def test(session: nox.Session) -> None:
     run("model=or c_r=0.885     M_s=1080000     a=1107718.3824  k_p=702271.17275 alpha=3.168")
     run("model=po c_r=0.956886  M_s=2956870.912 a=025069.875361 k_p=019498.2     alpha=0.18122")
 
-    run(f"model=ve effort=20 plot_failed=1 fast=1 quiet=1         ref='{ROOT}/data/B(H).Jesenik.AlNiCo.tab'")
+    run(f"model=ve effort=20 plot_failed=1 fast=1 quiet=1 preg=100 ref='{ROOT}/data/B(H).Jesenik.AlNiCo.tab'")
     run(f"model=ve effort=20 plot_failed=1 fast=1 interpolate=100 ref='{ROOT}/data/B(H).Ansys.LNG37.tab'")
-    run(f"model=ve effort=20 plot_failed=1 fast=1 interpolate=300 ref='{ROOT}/data/B(H).Altair_Flux.Example.csv'")
+    run(
+        f"model=ve effort=20 plot_failed=1 fast=1 interpolate=300 H_amp_max=0 ref='{ROOT}/data/B(H).Altair_Flux.Example.csv'"
+    )
+    for preg in [1, 100]:
+        run(
+            f"model=ve ref='{ROOT}/data/B(H).Jesenik.AlNiCo.tab' effort=20 quiet=1 stage=2 preg={preg} "
+            f" c_r=0.1 M_s=1460000 a=20000 k_p=66000 alpha=0.063"
+        )
 
     # Run pytest with coverage
     session.install("pytest ~= 8.3")

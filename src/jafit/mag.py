@@ -157,18 +157,22 @@ class HysteresisLoop:
         )
 
 
-def extract_H_c_B_r_BH_max(hm: npt.NDArray[np.float64]) -> tuple[float, float, float]:
+def extract_H_c_B_r_BH_max(hm: npt.NDArray[np.float64], *, intrinsic: bool = False) -> tuple[float, float, float]:
     """
-    For any M(H) curve, the computed B_r may have an arbitrary sign, while H_c and BH_max are always positive.
+    For any M(H) curve, the computed B_r may have an arbitrary sign, while H_c and BH_max are always non-negative.
+    The B_r value is (or expected to be) the same for intrinsic and extrinsic curves.
     """
     assert len(hm.shape) == 2 and hm.shape[1] == 2, f"M(H) curve out of shape: {hm.shape}"
     assert np.all(np.diff(hm[:, 0]) > 0)  # interp() requires that the x values are strictly increasing
-    bh = np.column_stack((hm[:, 0], mu_0 * hm.sum(axis=1)))
-    B_r = np.interp(0, bh[:, 0], bh[:, 1])  # Find B at H=0; trimming the curve is not necessary
-    bh = bh[(bh[:, 0] <= 0) & (bh[:, 1] >= 0)]  # Keep only the second quadrant: H<=0, B>=0
-    if len(bh) > 0:
-        H_c = np.abs(np.min(bh[:, 0]))
-        BH_max = -np.min(bh[:, 0] * bh[:, 1])
+    x = (hm_to_hj if intrinsic else hm_to_hb)(hm)
+    B_r = np.interp(0, x[:, 0], x[:, 1])  # Find B at H=0; trimming the curve is not necessary
+    x = x[(x[:, 0] <= 0) & (x[:, 1] >= 0)]  # Keep only the second quadrant: H<=0, B>=0
+    if len(x) > 0:
+        H_c = np.abs(np.min(x[:, 0]))
+        # TODO: empirical data is often noisy and sparse, which causes this method to incur a large error.
+        # Interpolation could help with sparsity but not with noise.
+        # Perhaps we could use a high-order least-squares polynomial fit here?
+        BH_max = -np.min(x[:, 0] * x[:, 1])
     else:
         H_c, BH_max = 0, 0
     return float(H_c), float(B_r), float(BH_max)

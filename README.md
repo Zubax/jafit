@@ -14,8 +14,10 @@ Supports several JA model definitions.
 ```shell
 git clone https://github.com/Zubax/jafit
 cd jafit
-pip install .
+pip install ".[interactive]"
 ```
+
+You may omit `[interactive]` if you are not planning on using the GUI.
 
 The tool works on GNU/Linux and Windows. Probably also on macOS, but YMMV.
 
@@ -39,16 +41,19 @@ the resulting hysteresis loop will be a minor loop.
 
 ### Find JA coefficients for a given reference B(H) curve
 
-The fitting problem may take multiple hours to solve, depending on the curve shape and the performance of your computer.
+The fitting problem may take multiple hours or days to solve,
+depending on the curve shape and the performance of your computer.
 Intermediate results and logs will be stored in the current working directory,
 so it may be a good idea to create a dedicated directory for this purpose.
 
+Basic examples:
+
 ```shell
 # Fit the example curve from Altair Flux:
-jafit model=venk ref="data/B(H).Altair_Flux.Example.csv" interpolate=300
+jafit model=venk ref="data/B(H).Altair_Flux.Example.csv" interpolate=300 H_amp_max=0
 
 # Find coefficients for isotropic AlNiCo 5:
-jafit model=venk ref="data/B(H).Jesenik.AlNiCo.tab"
+jafit model=venk ref="data/B(H).Jesenik.AlNiCo.tab" preg=100
 ```
 
 Output symbol legend per function evaluation:
@@ -57,11 +62,37 @@ Use `quiet=1` to reduce the verbosity.
 
 The input reference curve file must contain two columns: H \[A/m\] and B \[T\], either tab- or comma-separated.
 The first row may or may not be the header row.
+The reference curve may be either the entire hysteresis loop, whether major or minor,
+or only a part of the descending branch.
 
-The reference curve may be either the entire hysteresis loop, or any part of it;
-e.g., only a part of the descending branch.
-If a full loop is provided, then that loop doesn't need to be the major loop;
-the tool will simply use the H amplitude seen in the reference loop for solving the JA equation.
+By default, the tool will attempt to determine the suitable range of the H amplitude values using heuristics.
+It is always a good idea to specify this manually instead by setting `H_amp_min` and/or `H_amp_max`,
+where `H_amp_min` specifies the minimum H magnitude that must be reached before switching the H sweep direction,
+and `H_amp_max` is the maximum H magnitude that the solver is allowed to use; the solver will flip the H sweep
+direction somewhere between these two values as soon as the material reaches saturation ($\chi^\prime$ becomes small).
+
+`H_amp_max` is clamped to be at least as large as `H_amp_min`;  therefore, setting `H_amp_max=0`
+will effectively force the tool to use a fixed H amplitude, irrespective of the saturation detection.
+If the provided loop is a minor loop, the tool needs to be instructed to limit the H amplitude to what is seen
+in the reference dataset; to do that, simply pass `H_amp_max=0`.
+
+By default, the tool will assume that the reference loop may not push the material into saturation,
+and thus it will attempt to determine $M_s$ as part of the optimization problem.
+By default, the range for the $M_s$ search is determined automatically using heuristics.
+The heuristics can be overridden using the optional `M_s_min` and/or `M_s_max` parameters.
+If `M_s_max<=M_s_min`, the tool will assume that $M_s$ is known exactly, $M_s$=`M_s_min`=`M_s_max`,
+and remove the corresponding dimension from the optimization problem.
+This is often useful because manufacturers often provide the saturation magnetization (or polarization) directly.
+
+Optionally, you can provide the initial guess for (some of) the coefficients: `c_r`, `M_s`, `a`, `k_p`, `alpha`.
+It is required that `M_s_min <= M_s <= M_s_max`; if both min and max are provided, `M_s` is not needed.
+It is usually not necessary to set `k_p` because it defaults to $H_c$, which is a reasonable guess.
+
+The priority region error gain -- `preg` --
+can be set to a value greater than one to make the optimizer assign proportionally higher importance
+to the part of the descending branch where $M>0$, and the part of the ascending branch where $M<0$.
+Example: `preg=100`.
+This option only has effect if the full reference loop is provided.
 
 Option `interpolate=N`, where N is a positive integer, can be used to interpolate the reference curve
 with N equidistant sample points distributed along its length. Note that this is not the same as sampling the curve
@@ -73,20 +104,6 @@ If interpolation is not used (it is not by default), then the optimizer will nat
 to the regions of the curve with higher density of sample points. This may be leveraged to great advantage
 if the reference curve is pre-processed to leave out the regions that are less important for the fitting.
 
-If the reference curve is only a part of the hysteresis loop,
-then the tool will use simple heuristics to guess the reasonable H amplitude for solving the JA equation,
-assuming that the loop is the major loop (i.e., it reaches saturation).
-In this case, it is recommended to specify `H_amp_min` and/or `H_amp_max` explicitly instead of relying on heuristics.
-
-`H_amp_min` specifies the minimum H magnitude that must be reached before switching the H sweep direction,
-and `H_amp_max` is the maximum H magnitude that the solver is allowed to use; the solver will flip the H sweep
-direction somewhere between these two values as soon as the material reaches saturation ($\chi^\prime$ becomes small).
-
-If the loop is known to be the major loop, then it is occasionally useful to manually extend `H_amp_max` a little
-to ensure that the material reaches deep saturation, so that the optimizer converges to a good $M_s$ value faster.
-
-Optionally, you can provide the initial guess for (some of) the coefficients: `c_r`, `M_s`, `a`, `k_p`, `alpha`.
-
 The optimization is done in multiple stages, with global search preceding local refinement.
 The tool can be instructed to skip N first stages by setting `stage=N`. See the code for details.
 
@@ -95,6 +112,40 @@ during the optimization process. While ultra-high stiffness may be considered un
 unrealistically high magnetic susceptibility, being able to solve such cases is useful as it improves the smoothness
 of the optimization landscape, which in turn helps the optimizer converge faster and reduces the chances of
 getting stuck in local minima.
+
+For a more advanced usage example, consider the following datasheet from the manufacturer:
+
+<img src="data/B(H),J(H).VegaTechnik.LNG60.png" width="600" alt="">
+
+The following data is immediately available:
+
+* The third quadrant of the $B(H)$ curve; the data is extracted here as `data/B(H).VegaTechnik.LNG60.tab`.
+
+* The third quadrant polarization $J(H)$ curve is also available but not needed --- the tool will convert
+  $B(H) \Rightarrow J(H) \Rightarrow M(H)$.
+
+* Saturation magnetization $M_s=1174563$ A/m, which is expressed as saturation polarization $J_s$ in the datasheet.
+
+* The excitation field intensity $H_m=713014$ A/m.
+
+Sadly, the datasheet is not using the SI system, so manual conversion is needed.
+The corresponding optimization command is as follows:
+
+```shell
+jafit ref='data/B(H).VegaTechnik.LNG60.tab' model=venkataraman M_s_min=1174563 M_s_max=1174563 H_amp_min=713014 H_amp_max=713014
+```
+
+### Adjust the parameters interactively
+
+Use `interactive=1` to launch an interactive tool with web GUI.
+This mode requires that the interactive GUI option is enabled when installing the package;
+refer to the installation section for details.
+
+```
+jafit interactive=1 model=venk ref='data/B(H).Campbell.AlNiCo_5.tab' c_r=0.00083284 M_s=1251180 a=20838 k_p=69771 alpha=0.08
+```
+
+<img src="interactive.png" width="800" alt="">
 
 ### Helpful tips
 
@@ -106,6 +157,7 @@ For the benefit of all mankind, please only use SI units. To convert data from a
 
 - $1 \ \text{oersted} \approx 79.57747 \frac{\text{A}}{\text{m}}$
 - $1 \ \frac{\text{emu}}{\text{cm}^3} = 10^3 \frac{\text{A}}{\text{m}}$
+- $1 \ \text{gauss} = 10^{-4} \ \text{T}$
 
 For more, refer to `papers/magnetic_units.pdf`.
 

@@ -113,10 +113,10 @@ class Coef:
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"c_r={self.c_r:.17f}, "
-            f"M_s={self.M_s:017.9f}, "
-            f"a={self.a:016.9f}, "
-            f"k_p={self.k_p:016.9f}, "
+            f"c_r={self.c_r:.17f} "
+            f"M_s={self.M_s:017.9f} "
+            f"a={self.a:016.9f} "
+            f"k_p={self.k_p:016.9f} "
             f"alpha={self.alpha:.17f})"
         )
 
@@ -267,7 +267,7 @@ def _sweep(
     # Ideally, we should be able to adjust the tolerance on the go without discarding the solver state,
     # but the SciPy API does not seem to support this, and I don't have the time to roll out my own implicit solver.
     rtol, atol = 1e-6, 1e-4
-    max_step = min(200.0, H_stop_range[0] / 200, H_stop_range[1] / 500)
+    max_step = min(200.0, H_stop_range[0] / 100, H_stop_range[1] / 500)
     if fast:
         rtol, atol, max_step = [x * 10 for x in (rtol, atol, max_step)]
     _logger.debug(
@@ -504,7 +504,7 @@ def _dL_dx(x: float) -> float:
 @njit
 def _nonzero(x: float, eps: float = 1e-20) -> float:
     if np.abs(x) < eps:
-        return np.sign(x) * eps  # type: ignore
+        return np.copysign(eps, x)  # type: ignore
     return x
 
 
