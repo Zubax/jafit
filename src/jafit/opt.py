@@ -128,7 +128,7 @@ def fit_global(
             obj_fn_proxy,
             [(lo, hi) for lo, hi in zip(conv(x_min), conv(x_max))],
             x0=conv(x_0),
-            mutation=(0.5, 1.9),
+            mutation=(0.5, 1.6),
             recombination=0.7,
             popsize=20,
             maxiter=10**6,
