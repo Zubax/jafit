@@ -87,8 +87,7 @@ class Coef:
     In the limit case, c_r=1 results in a purely anhysteretic curve; higher values increase the loop area.
 
     M_s is a basic property of the chemical composition of the material that is usually invariant to the direction
-    of magnetization in anisotropic materials. That is to say, in anisotropic materials M_s is constant
-    for all directions of magnetization.
+    of magnetization in anisotropic materials.
 
     For soft materials, k_p is approximately equal to the intrinsic coercivity H_ci.
     During fitting, it is a good idea to start with k_p≈H_c.
