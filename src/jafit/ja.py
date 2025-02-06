@@ -84,7 +84,7 @@ class Coef:
     The specific influence of the parameters on the solution depends on the variant of the JA model used.
     See the Model enum for the available variants.
 
-    In the limit case, c_r=1 results in a purely anhysteretic curve; higher values increase the loop area.
+    In the limit case, c_r=1 results in a purely anhysteretic curve; lower values increase the loop area.
 
     M_s is a basic property of the chemical composition of the material that is usually invariant to the direction
     of magnetization in anisotropic materials.
