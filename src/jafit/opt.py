@@ -128,9 +128,9 @@ def fit_global(
             obj_fn_proxy,
             [(lo, hi) for lo, hi in zip(conv(x_min), conv(x_max))],
             x0=conv(x_0),
-            mutation=(0.5, 1.6),
+            mutation=(0.5, 1.5),
             recombination=0.7,
-            popsize=20,
+            popsize=15,
             maxiter=10**6,
             tol=tolerance or 0.005,
             callback=cb,
@@ -205,6 +205,53 @@ class CoefVecConverter:
     """
     Converts between Coef and a vector.
     If min/max are the same for a dimension, it is omitted from the vector, thus reducing the optimization space.
+
+    Fixed M_s (lo.M_s == hi.M_s):
+
+    >>> lo = Coef(c_r=0.1, M_s=10.0, a=1.0, k_p=2.0, alpha=0.3)
+    >>> hi = Coef(c_r=0.9, M_s=10.0, a=3.0, k_p=4.0, alpha=0.7)
+    >>> converter = CoefVecConverter(lo, hi)
+    >>> coef = Coef(c_r=0.5, M_s=10.0, a=2.0, k_p=3.0, alpha=0.5)
+    >>> vec = converter.coef2vec(coef)
+    >>> vec.tolist()  # doctest: +ELLIPSIS
+    [0.5, 0.5, 0.5, 0.5...]
+    >>> new_coef = converter.vec2coef(vec)
+    >>> new_coef.c_r, new_coef.M_s, new_coef.a, new_coef.k_p, new_coef.alpha
+    (0.5, 10.0, 2.0, 3.0, 0.5)
+    >>> converter(coef).tolist()  # doctest: +ELLIPSIS
+    [0.5, 0.5, 0.5, 0.5...]
+    >>> converter(vec).a
+    2.0
+
+    Variable M_s (lo.M_s != hi.M_s):
+
+    >>> lo2 = Coef(c_r=0.1, M_s=10.0, a=1.0, k_p=2.0, alpha=0.3)
+    >>> hi2 = Coef(c_r=0.9, M_s=20.0, a=3.0, k_p=4.0, alpha=0.7)
+    >>> converter2 = CoefVecConverter(lo2, hi2)
+    >>> coef2 = Coef(c_r=0.5, M_s=15.0, a=2.0, k_p=3.0, alpha=0.5)
+    >>> vec2 = converter2.coef2vec(coef2)
+    >>> vec2.tolist()  # doctest: +ELLIPSIS
+    [0.5, 0.5, 0.5, 0.5, 0.5...]
+    >>> new_coef2 = converter2.vec2coef(vec2)
+    >>> new_coef2.c_r, new_coef2.M_s, new_coef2.a, new_coef2.k_p, new_coef2.alpha
+    (0.5, 15.0, 2.0, 3.0, 0.5)
+    >>> converter2(coef2).tolist()  # doctest: +ELLIPSIS
+    [0.5, 0.5, 0.5, 0.5, 0.5...]
+    >>> converter2(vec2).M_s
+    15.0
+
+    Same boundary values:
+
+    >>> lo3 = Coef(c_r=0.1, M_s=10.0, a=1.0, k_p=2.0, alpha=0.3)
+    >>> hi3 = Coef(c_r=0.9, M_s=20.0, a=1.0, k_p=4.0, alpha=0.3)
+    >>> converter3 = CoefVecConverter(lo3, hi3)
+    >>> coef3 = Coef(c_r=0.5, M_s=15.0, a=1.0, k_p=3.0, alpha=0.5)
+    >>> vec3 = converter3.coef2vec(coef3)
+    >>> vec3.tolist()
+    [0.5, 0.5, 0.5, 0.5, 0.5]
+    >>> new_coef3 = converter3.vec2coef(vec3)
+    >>> new_coef3.c_r, new_coef3.M_s, new_coef3.a, new_coef3.k_p, new_coef3.alpha
+    (0.5, 15.0, 1.0, 3.0, 0.3)
     """
 
     def __init__(self, /, lo: Coef, hi: Coef) -> None:
@@ -214,16 +261,43 @@ class CoefVecConverter:
 
     def coef2vec(self, /, c: Coef) -> npt.NDArray[np.float64]:
         if self._fixed_M_s:
-            return np.array([c.c_r, c.a, c.k_p, c.alpha])
-        return np.array([c.c_r, c.M_s, c.a, c.k_p, c.alpha])
+            return np.array(
+                [
+                    self._normalize(c.c_r, self._lo.c_r, self._hi.c_r),
+                    self._normalize(c.a, self._lo.a, self._hi.a),
+                    self._normalize(c.k_p, self._lo.k_p, self._hi.k_p),
+                    self._normalize(c.alpha, self._lo.alpha, self._hi.alpha),
+                ],
+            )
+        return np.array(
+            [
+                self._normalize(c.c_r, self._lo.c_r, self._hi.c_r),
+                self._normalize(c.M_s, self._lo.M_s, self._hi.M_s),
+                self._normalize(c.a, self._lo.a, self._hi.a),
+                self._normalize(c.k_p, self._lo.k_p, self._hi.k_p),
+                self._normalize(c.alpha, self._lo.alpha, self._hi.alpha),
+            ],
+        )
 
     def vec2coef(self, /, vec: npt.NDArray[np.float64]) -> Coef:
         v = [float(x) for x in vec]
         if self._fixed_M_s:
             assert len(v) == 4
-            return Coef(c_r=v[0], M_s=(self._lo.M_s + self._hi.M_s) * 0.5, a=v[1], k_p=v[2], alpha=v[3])
+            return Coef(
+                c_r=self._restore(v[0], self._lo.c_r, self._hi.c_r),
+                M_s=self._restore(0.5, self._lo.M_s, self._hi.M_s),
+                a=self._restore(v[1], self._lo.a, self._hi.a),
+                k_p=self._restore(v[2], self._lo.k_p, self._hi.k_p),
+                alpha=self._restore(v[3], self._lo.alpha, self._hi.alpha),
+            )
         assert len(v) == 5
-        return Coef(c_r=v[0], M_s=v[1], a=v[2], k_p=v[3], alpha=v[4])
+        return Coef(
+            c_r=self._restore(v[0], self._lo.c_r, self._hi.c_r),
+            M_s=self._restore(v[1], self._lo.M_s, self._hi.M_s),
+            a=self._restore(v[2], self._lo.a, self._hi.a),
+            k_p=self._restore(v[3], self._lo.k_p, self._hi.k_p),
+            alpha=self._restore(v[4], self._lo.alpha, self._hi.alpha),
+        )
 
     @overload
     def __call__(self, /, x: Coef) -> npt.NDArray[np.float64]: ...
@@ -235,6 +309,18 @@ class CoefVecConverter:
         if isinstance(x, np.ndarray):
             return self.vec2coef(x)
         raise TypeError(x)
+
+    @staticmethod
+    def _normalize(x: float, lo: float, hi: float) -> float:
+        if np.isclose(lo, hi):
+            return 0.5
+        return float((x - lo) / (hi - lo))
+
+    @staticmethod
+    def _restore(x: float, lo: float, hi: float) -> float:
+        if np.isclose(lo, hi):
+            return (lo + hi) * 0.5
+        return float(lo + x * (hi - lo))
 
 
 _logger = getLogger(__name__)

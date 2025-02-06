@@ -83,6 +83,8 @@ The heuristics can be overridden using the optional `M_s_min` and/or `M_s_max` p
 If `M_s_max<=M_s_min`, the tool will assume that $M_s$ is known exactly, $M_s$=`M_s_min`=`M_s_max`,
 and remove the corresponding dimension from the optimization problem.
 This is often useful because manufacturers often provide the saturation magnetization (or polarization) directly.
+Note that for anisotropic materials, $M_s$ is usually invariant with respect to the direction of the applied field,
+as it is defined by the chemical composition of the material.
 
 Optionally, you can provide the initial guess for (some of) the coefficients: `c_r`, `M_s`, `a`, `k_p`, `alpha`.
 It is required that `M_s_min <= M_s <= M_s_max`; if both min and max are provided, `M_s` is not needed.
@@ -125,6 +127,7 @@ The following data is immediately available:
   $B(H) \Rightarrow J(H) \Rightarrow M(H)$.
 
 * Saturation magnetization $M_s=1174563$ A/m, which is expressed as saturation polarization $J_s$ in the datasheet.
+  This value is usually invariant with respect to the direction of the applied field in anisotropic materials.
 
 * The excitation field intensity $H_m=713014$ A/m.
 
