@@ -343,7 +343,7 @@ def _sweep(
             break
 
     # Ensure the last point is saved.
-    if np.abs(hm[idx - 1] - (mew := solver.t, solver.y[0])).max() > 1e-9:
+    if np.abs(hm[idx - 1] - (mew := (solver.t, solver.y[0]))).max() > 1e-9:
         hm[idx] = mew
         idx += 1
 
