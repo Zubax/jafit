@@ -121,9 +121,9 @@ For a more advanced usage example, consider the following datasheet from the man
 
 The following data is immediately available:
 
-* The third quadrant of the $B(H)$ curve; the data is extracted here as `data/B(H).VegaTechnik.LNG60.tab`.
+* The second quadrant of the $B(H)$ curve; the data is extracted here as `data/B(H).VegaTechnik.LNG60.tab`.
 
-* The third quadrant polarization $J(H)$ curve is also available but not needed --- the tool will convert
+* The second quadrant polarization $J(H)$ curve is also available but not needed --- the tool will convert
   $B(H) \Rightarrow J(H) \Rightarrow M(H)$.
 
 * Saturation magnetization $M_s=1174563$ A/m, which is expressed as saturation polarization $J_s$ in the datasheet.
