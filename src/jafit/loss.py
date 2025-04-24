@@ -56,8 +56,8 @@ def make_magnetization(ref: HysteresisLoop, *, lattice_size: int = 10**4) -> Los
     H_lattice = np.linspace(*ref.H_range, lattice_size)
 
     def loss(hm_ref: npt.NDArray[np.float64], hm_sol: npt.NDArray[np.float64]) -> float:
-        M_ref = interpolate(H_lattice, hm_ref, extrapolate=True)
-        M_sol = interpolate(H_lattice, hm_sol, extrapolate=True)
+        M_ref = interpolate(H_lattice, hm_ref, extrapolate=True)  # type: ignore
+        M_sol = interpolate(H_lattice, hm_sol, extrapolate=True)  # type: ignore
         return float(np.sqrt(np.mean((M_ref - M_sol) ** 2)))
 
     def fun(sol: HysteresisLoop) -> float:
@@ -195,7 +195,7 @@ def _squared_distance_point_to_polyline(
     if len(polyline) < 1:
         return np.float64(np.nan)
     if len(polyline) < 2:
-        return np.linalg.norm(point - polyline[0])
+        return np.linalg.norm(point - polyline[0])  # type: ignore
 
     # Let P[i] = polyline[i], and d[i] = P[i+1] - P[i]. We'll operate over all segments in a vectorized manner.
     P = polyline[:-1]  # shape = (N-1, 2)
