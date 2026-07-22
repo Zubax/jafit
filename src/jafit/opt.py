@@ -30,6 +30,23 @@ SolveFunction = Callable[[Coef], Solution]
 LossFunction = Callable[[HysteresisLoop], float]
 
 
+# Kokornaczyk & Gutowski, IEEE Trans. Magn. 51 (2015) 7300305, doi:10.1109/TMAG.2014.2354315.
+def _supercritical_loss_penalty(c: Coef, strength: float) -> float:
+    """
+    >>> coef = lambda ratio: Coef(c_r=0.1, M_s=100, a=100, k_p=1, alpha=ratio)
+    >>> _supercritical_loss_penalty(coef(2.99), 1.0)
+    0.0
+    >>> round(_supercritical_loss_penalty(coef(3.00), 1.0), 9)
+    1.0
+    >>> round(_supercritical_loss_penalty(coef(3.01), 1.0), 9)
+    4.0
+    >>> round(_supercritical_loss_penalty(coef(3.00), 0.25), 9)
+    0.25
+    """
+    normalized_excess = max(0.0, (c.alpha * c.M_s / c.a - 2.99) / 0.01)
+    return strength * normalized_excess**2
+
+
 def make_objective_function(
     solve_fun: SolveFunction,
     loss_fun: LossFunction,
@@ -39,10 +56,37 @@ def make_objective_function(
     stop_loss: float = -np.inf,
     stop_evals: int = 10**10,
     quiet: bool = False,
+    supercritical_penalty: float = 0.0,
 ) -> ObjectiveFunction:
     """
     WARNING: the callback may be invoked from a different thread concurrently.
+
+    >>> hm = np.array([[-1.0, -1.0], [0.0, 0.0], [1.0, 1.0]])
+    >>> solution = Solution(branches=[hm, hm[::-1], hm], anhysteretic=hm)
+    >>> callbacks = []
+    >>> conditioned = make_objective_function(
+    ...     lambda _: solution, lambda _: 0.25, callback=lambda *args: callbacks.append(args),
+    ...     stop_loss=0.5, quiet=True, supercritical_penalty=1.0,
+    ... )
+    >>> result = conditioned(Coef(c_r=0.1, M_s=100, a=100, k_p=1, alpha=3.0))
+    >>> round(result.loss, 9), result.done
+    (1.25, False)
+    >>> result = conditioned(Coef(c_r=0.1, M_s=100, a=100, k_p=1, alpha=2.0))
+    >>> result.loss, result.done, len(callbacks)
+    (0.25, True, 2)
+    >>> unconditioned = make_objective_function(lambda _: solution, lambda _: 0.25, callback=lambda *_: None)
+    >>> unconditioned(Coef(c_r=0.1, M_s=100, a=100, k_p=1, alpha=3.0)).loss
+    0.25
+    >>> make_objective_function(lambda _: solution, lambda _: 0.25, callback=lambda *_: None,
+    ...                         supercritical_penalty=-1.0)
+    Traceback (most recent call last):
+    ...
+    ValueError: Invalid supercritical penalty strength: -1.0
     """
+    supercritical_penalty = float(supercritical_penalty)
+    if not np.isfinite(supercritical_penalty) or supercritical_penalty < 0:
+        raise ValueError(f"Invalid supercritical penalty strength: {supercritical_penalty}")
+
     g_epoch = 0
     g_best_loss = np.inf
 
@@ -54,6 +98,7 @@ def make_objective_function(
         sol: Solution | None = None
         started_at = time.monotonic()
         elapsed_loss = 0.0
+        loss_penalty = 0.0
         try:
             sol = solve_fun(c)
         except SolverError as ex:
@@ -65,6 +110,9 @@ def make_objective_function(
             loss_started_at = time.monotonic()
             loop = HysteresisLoop(descending=sol.last_descending[::-1], ascending=sol.last_ascending)
             loss = loss_fun(loop.decimate(decimate_solution_to))
+            if supercritical_penalty > 0:
+                loss_penalty = _supercritical_loss_penalty(c, supercritical_penalty)
+                loss += loss_penalty
             elapsed_loss = time.monotonic() - loss_started_at
         elapsed = time.monotonic() - started_at
 
@@ -85,6 +133,8 @@ def make_objective_function(
                 elapsed_loss,
                 "+".join(map(str, map(len, sol.branches))) if sol else "~",
             )
+            if loss_penalty > 0:
+                log_fn("        supercritical penalty=%.9f", loss_penalty)
         if is_best and sol:
             callback(this_epoch, c, (sol, loss))
         return ObjectiveFunctionResult(loss=loss, done=loss < stop_loss or this_epoch >= stop_evals)
