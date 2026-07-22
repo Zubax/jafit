@@ -19,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 interactive = [
-    "dash ~= 2.18",
+    "dash ~= 4.0",
 ]
 
 [project.scripts]

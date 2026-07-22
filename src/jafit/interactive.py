@@ -7,7 +7,6 @@ from .ja import Coef, solve, SolverError, Model
 from .mag import HysteresisLoop, hm_to_hj, hm_to_hb, extract_H_c_B_r_BH_max
 from . import loss
 
-
 _PLOT_MODES = {
     "J(H)": (hm_to_hj, "J [T]"),
     "B(H)": (hm_to_hb, "B [T]"),
@@ -420,7 +419,7 @@ def run(
         # noinspection PyTypeChecker
         return fig, command_text, msg, msg_style, value_H_c, value_H_ci, value_B_r, value_BH_max
 
-    app.run_server(debug=True, use_reloader=False)
+    app.run(debug=True, use_reloader=False)
 
 
 _logger = getLogger(__name__)
