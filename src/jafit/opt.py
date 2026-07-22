@@ -30,9 +30,10 @@ SolveFunction = Callable[[Coef], Solution]
 LossFunction = Callable[[HysteresisLoop], float]
 
 
-# Kokornaczyk & Gutowski, IEEE Trans. Magn. 51 (2015) 7300305, doi:10.1109/TMAG.2014.2354315.
 def _supercritical_loss_penalty(c: Coef, strength: float) -> float:
     """
+    Kokornaczyk & Gutowski, IEEE Trans. Magn. 51 (2015) 7300305, doi:10.1109/TMAG.2014.2354315.
+
     >>> coef = lambda ratio: Coef(c_r=0.1, M_s=100, a=100, k_p=1, alpha=ratio)
     >>> _supercritical_loss_penalty(coef(2.99), 1.0)
     0.0
