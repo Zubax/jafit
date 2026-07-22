@@ -339,6 +339,7 @@ def run(
 
         # Solve the system.
         sol: HysteresisLoop | None = None
+        anhysteretic = None
         exception: Exception | None = None
         try:
             solution = solve(
@@ -348,6 +349,7 @@ def run(
                 fast=quality < 1,
             )
             branches = solution.branches
+            anhysteretic = solution.anhysteretic
             sol = HysteresisLoop(descending=solution.last_descending[::-1], ascending=solution.last_ascending)
         except SolverError as ex:
             exception, branches = ex, ex.partial_curves
@@ -373,6 +375,17 @@ def run(
         for idx, br in enumerate(branches):
             hb = hm_to_plot(br)
             fig.add_trace(go.Scattergl(x=hb[:, 0], y=hb[:, 1], mode="lines", name=f"JA #{idx}", line=dict(width=2)))
+        if anhysteretic is not None:
+            hb = hm_to_plot(anhysteretic)
+            fig.add_trace(
+                go.Scattergl(
+                    x=hb[:, 0],
+                    y=hb[:, 1],
+                    mode="lines",
+                    name="anhysteretic",
+                    line=dict(width=2, dash="dash"),
+                )
+            )
         if ref is not None:
             ref_params = dict(mode="markers", marker=dict(size=3))
             if len(ref.descending):
@@ -395,10 +408,19 @@ def run(
             f" c_r={c_r} M_s={M_s} a={a} k_p={k_p} alpha={alpha}"
             f" H_amp_min={H_amp[0]} H_amp_max={H_amp[1]}"
         )
+        # Kokornaczyk & Gutowski, IEEE Trans. Magn. 51 (2015) 7300305, doi:10.1109/TMAG.2014.2354315.
+        anhysteretic_ratio = alpha * M_s / a
         if exception:
             msg_style["color"] = "#600"
             msg_style["background"] = "#fdd"
             msg = f"{type(exception).__name__}: {exception}"
+        elif anhysteretic_ratio >= 3:
+            msg_style["color"] = "#664d03"
+            msg_style["background"] = "#fff3cd"
+            msg = (
+                f"Solved in {time.monotonic() - started_at:.3f} s\n"
+                f"Warning: alpha*M_s/a={anhysteretic_ratio:.6g} >= 3; the anhysteretic curve is not single-valued in H"
+            )
         else:
             msg_style["color"] = "#060"
             msg_style["background"] = "#dfd"
