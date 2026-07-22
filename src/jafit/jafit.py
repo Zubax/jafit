@@ -21,7 +21,6 @@ from .mag import HysteresisLoop, extract_H_c_B_r_BH_max, hm_to_hj
 from .opt import fit_global, fit_local, make_objective_function
 from . import loss, io, vis, interactive, __version__
 
-
 PLOT_FILE_SUFFIX = ".jafit.png"
 CURVE_FILE_SUFFIX = ".jafit.tab"
 
@@ -102,6 +101,7 @@ def do_fit(
     interpolate_points: int | None,
     max_evaluations_per_stage: int | None,
     priority_region_error_gain: float | None,
+    supercritical_penalty: float,
     stage: int,
     plot_failed: bool,
     fast: bool,
@@ -198,6 +198,10 @@ def do_fit(
 
     # Loss function parameters.
     priority_region_error_gain = priority_region_error_gain or 1.0
+    if not np.isfinite(supercritical_penalty) or supercritical_penalty < 0:
+        raise ValueError(f"Invalid supercritical penalty strength: {supercritical_penalty}")
+    if supercritical_penalty > 0:
+        _logger.info("Supercritical parameter penalty strength: %f", supercritical_penalty)
 
     # Run the optimizer.
     if (H_c > 100 and B_r > 0.1) and stage < 1:
@@ -213,6 +217,7 @@ def do_fit(
                 stop_evals=max_evaluations_per_stage or 10**5,
                 callback=make_callback("0_initial", ref, plot_failed=plot_failed),
                 quiet=quiet,
+                supercritical_penalty=supercritical_penalty,
             ),
             tolerance=1e-3,
         )
@@ -231,6 +236,7 @@ def do_fit(
                 stop_evals=max_evaluations_per_stage or 10**7,
                 callback=make_callback("1_global", ref_interpolated, plot_failed=plot_failed),
                 quiet=quiet,
+                supercritical_penalty=supercritical_penalty,
             ),
             tolerance=1e-7,
         )
@@ -246,6 +252,7 @@ def do_fit(
             stop_evals=max_evaluations_per_stage or 10**5,
             callback=make_callback("2_local", ref_interpolated, plot_failed=plot_failed),
             quiet=quiet,
+            supercritical_penalty=supercritical_penalty,
         ),
     )
 
@@ -314,6 +321,7 @@ def run(
     H_amp_min: float | None,
     H_amp_max: float | None,
     priority_region_error_gain: float | None,
+    supercritical_penalty: float,
     interpolate_points: int | None,
     effort: int | None,
     stage: int,
@@ -337,6 +345,7 @@ def run(
             interpolate_points=interpolate_points,
             max_evaluations_per_stage=effort,
             priority_region_error_gain=priority_region_error_gain,
+            supercritical_penalty=supercritical_penalty,
             stage=stage,
             plot_failed=plot_failed,
             fast=fast,
@@ -443,6 +452,7 @@ def main() -> None:
             H_amp_min=H_amp_min,
             H_amp_max=H_amp_max,
             priority_region_error_gain=_param(named, "preg", float),
+            supercritical_penalty=_param(named, "supercritical_penalty", float, 0.0),
             interpolate_points=_param(named, "interpolate", int),
             effort=_param(named, "effort", int),
             stage=_param(named, "stage", int, 0),

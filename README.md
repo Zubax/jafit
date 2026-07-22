@@ -27,13 +27,13 @@ The tool will plot the curves and export table files containing the data points.
 
 ```shell
 # Coefficients from the default COMSOL Jiles-Atherton material model:
-jafit model=venk  c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
+jafit model=venk c_r=0.1 M_s=1.6e6 a=560 k_p=1200 alpha=0.0007
 
 # Coefficients from the Altair Flux example B(H) curve:
-jafit model=venk  H_amp_max=1111  c_r=0.2107788 M_s=1306755.22 a=108.694943 k_p=177.625645 alpha=0.000294224757
+jafit model=venk H_amp_max=1111  c_r=0.2107788 M_s=1306755.22 a=108.694943 k_p=177.625645 alpha=0.000294224757
 
 # From "Modeling of permanent magnets: Interpretation of parameters obtained from the Jiles–Atherton hysteresis model":
-jafit model=orig  H_amp_min=4774648 H_amp_max=4774648  c_r=0.885 M_s=1080000 a=1107718.3824 k_p=702271.17275 alpha=3.168
+jafit model=orig H_amp_min=4774648 H_amp_max=4774648  c_r=0.885 M_s=1080000 a=1107718.3824 k_p=702271.17275 alpha=3.168
 ```
 
 If the H amplitude is set manually and is insufficient to reach saturation,
@@ -106,6 +106,8 @@ If interpolation is not used (it is not by default), then the optimizer will nat
 to the regions of the curve with higher density of sample points. This may be leveraged to great advantage
 if the reference curve is pre-processed to leave out the regions that are less important for the fitting.
 
+To enforce monotonic anhysteretic magnetization such that `alpha * M_s / a < 3`, add `supercritical_penalty=1`.
+
 The optimization is done in multiple stages, with global search preceding local refinement.
 The tool can be instructed to skip N first stages by setting `stage=N`. See the code for details.
 
@@ -135,7 +137,7 @@ Sadly, the datasheet is not using the SI system, so manual conversion is needed.
 The corresponding optimization command is as follows:
 
 ```shell
-jafit ref='data/B(H).VegaTechnik.LNG60.tab' model=venkataraman M_s_min=1174563 M_s_max=1174563 H_amp_min=713014 H_amp_max=713014
+jafit ref='data/B(H).VegaTechnik.LNG60.tab' model=venkataraman supercritical_penalty=1 M_s_min=1174563 M_s_max=1174563 H_amp_min=713014 H_amp_max=713014
 ```
 
 ### Adjust the parameters interactively

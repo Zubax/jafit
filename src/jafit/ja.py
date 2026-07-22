@@ -142,6 +142,11 @@ class Solution:
     Contains all loop branches in the order of their traversal.
     """
 
+    anhysteretic: npt.NDArray[np.float64]
+    """
+    The anhysteretic curve, ordered by the effective field; the applied field may be non-monotonic.
+    """
+
     @property
     def virgin(self) -> npt.NDArray[np.float64]:
         """The initial magnetization curve."""
@@ -186,8 +191,11 @@ def solve(
     purposes. The solver manages that by dynamically adjusting the tolerance bounds.
 
     >>> stiff = Coef(c_r=0.1, M_s=1191941.07155, a=65253, k_p=85677, alpha=0.19)
-    >>> solve(Model.VENKATARAMAN, stiff, (100e3, 3e6))  # doctest: +ELLIPSIS
+    >>> solution = solve(Model.VENKATARAMAN, stiff, (100e3, 3e6))
+    >>> solution  # doctest: +ELLIPSIS
     Solution(...)
+    >>> solution.anhysteretic.shape[1]
+    2
     >>> solve(Model.ORIGINAL, stiff, (100e3, 3e6))  # doctest: +ELLIPSIS
     Solution(...)
     >>> solve(Model.SZEWCZYK, stiff, (100e3, 3e6))  # doctest: +ELLIPSIS
@@ -236,7 +244,8 @@ def solve(
         hms.append(branch)
         H, M = branch[-1]
 
-    return Solution(branches=hms)
+    H_e = np.unique(np.concatenate([hm[:, 0] + coef.alpha * hm[:, 1] for hm in hms]))
+    return Solution(branches=hms, anhysteretic=_make_anhysteretic_curve(H_e, coef.M_s, coef.a, coef.alpha))
 
 
 def _sweep(
@@ -491,6 +500,30 @@ def _langevin(x: float) -> float:
     if np.abs(x) < 1e-4:  # For very small |x|, use the series expansion ~ x/3
         return x / 3.0
     return 1.0 / np.tanh(x) - 1.0 / x  # type: ignore
+
+
+@njit
+def _make_anhysteretic_curve(
+    H_e: npt.NDArray[np.float64], M_s: float, a: float, alpha: float
+) -> npt.NDArray[np.float64]:
+    """
+    Szewczyk et al., Acta Phys. Pol. A 133 (2018) 654, doi:10.12693/APhysPolA.133.654, eq. (5).
+
+    >>> H_e = np.linspace(-100, 100, 1001)
+    >>> subcritical = _make_anhysteretic_curve(H_e, M_s=300, a=100, alpha=0.5)
+    >>> bool(np.all(np.diff(subcritical[:, 0]) > 0))
+    True
+    >>> bool(np.allclose(subcritical[:, 0] + 0.5 * subcritical[:, 1], H_e))
+    True
+    >>> supercritical = _make_anhysteretic_curve(H_e, M_s=400, a=100, alpha=1.0)
+    >>> bool(np.any(np.diff(supercritical[:, 0]) < 0))
+    True
+    """
+    out = np.empty((len(H_e), 2), dtype=np.float64)
+    for idx, effective_field in enumerate(H_e):
+        M_an = M_s * _langevin(effective_field / a)
+        out[idx] = effective_field - alpha * M_an, M_an
+    return out
 
 
 @njit
